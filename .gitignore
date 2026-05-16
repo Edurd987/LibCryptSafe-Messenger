@@ -1,0 +1,7 @@
+build/
+*.exe
+*.a
+*.o
+*_log.txt
+.gradle/
+/android/app/build/
