@@ -4,6 +4,10 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.*
+import okhttp3.*
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -11,6 +15,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scrollMessages: ScrollView
     private lateinit var etMessage: EditText
     private lateinit var tvStatus: TextView
+
+    private var webSocket: WebSocket? = null
+    private val client = OkHttpClient.Builder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    // IP сервера — меняй здесь
+    private val SERVER_URL = "ws://192.168.1.152:8080"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -21,23 +33,17 @@ class MainActivity : AppCompatActivity() {
         etMessage         = findViewById(R.id.et_message)
         tvStatus          = findViewById(R.id.tv_status)
 
-        // ECDH: генерируем две пары и делаем handshake локально
-        val alice = CryptoManager.generateKeypair()
-        val bob   = CryptoManager.generateKeypair()
-
-        if (alice != null && bob != null) {
-            // Alice вычисляет shared key из публичного ключа Bob
-            // Bob вычисляет shared key из публичного ключа Alice
-            val aliceResult = CryptoManager.computeSharedKey(bob)
-            val bobResult   = CryptoManager.computeSharedKey(alice)
-
+        // Инициализация ECDH
+        val pub = CryptoManager.generateKeypair()
+        if (pub != null) {
             val fp = CryptoManager.getFingerprint()
-            tvStatus.text = "🔐 E2EE активно | ${fp.take(8)}..."
-            addMessage("✅ ECDH handshake выполнен", isOwn = false)
-            addMessage("✅ AES-256-GCM ключ готов", isOwn = false)
-        } else {
-            tvStatus.text = "❌ Ошибка ядра"
+            tvStatus.text = "🔐 ${fp.take(8)}... | Подключение..."
+            // Локальный handshake для теста шифрования
+            CryptoManager.computeSharedKey(pub)
         }
+
+        // Подключаемся к relay серверу
+        connectWebSocket()
 
         findViewById<Button>(R.id.btn_send).setOnClickListener {
             val text = etMessage.text.toString().trim()
@@ -48,23 +54,59 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun connectWebSocket() {
+        val request = Request.Builder().url(SERVER_URL).build()
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+
+            override fun onOpen(ws: WebSocket, response: Response) {
+                runOnUiThread {
+                    tvStatus.text = "🟢 Подключено к $SERVER_URL"
+                    addMessage("✅ Подключено к серверу", isOwn = false)
+                }
+            }
+
+            override fun onMessage(ws: WebSocket, bytes: ByteString) {
+                // Получаем зашифрованное сообщение
+                val decrypted = CryptoManager.decrypt(bytes.toByteArray())
+                runOnUiThread {
+                    if (decrypted != null) {
+                        val text = String(decrypted, Charsets.UTF_8)
+                        addMessage(text, isOwn = false)
+                    } else {
+                        addMessage("❌ Ошибка расшифровки", isOwn = false)
+                    }
+                }
+            }
+
+            override fun onMessage(ws: WebSocket, text: String) {
+                runOnUiThread {
+                    addMessage(text, isOwn = false)
+                }
+            }
+
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                runOnUiThread {
+                    tvStatus.text = "🔴 Нет соединения"
+                    addMessage("❌ ${t.message}", isOwn = false)
+                }
+            }
+
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                runOnUiThread {
+                    tvStatus.text = "🔴 Отключено"
+                }
+            }
+        })
+    }
+
     private fun sendMessage(text: String) {
-        // Показываем исходное сообщение
         addMessage(text, isOwn = true)
 
-        // Шифруем
         val encrypted = CryptoManager.encrypt(text.toByteArray(Charsets.UTF_8))
-        if (encrypted != null) {
-            // Расшифровываем для проверки
-            val decrypted = CryptoManager.decrypt(encrypted)
-            if (decrypted != null) {
-                val decryptedText = String(decrypted, Charsets.UTF_8)
-                addMessage("🔓 ${decryptedText} (${encrypted.size}b)", isOwn = false)
-            } else {
-                addMessage("❌ Ошибка дешифровки", isOwn = false)
-            }
+        if (encrypted != null && webSocket != null) {
+            webSocket!!.send(encrypted.toByteString())
         } else {
-            addMessage("❌ Ошибка шифрования", isOwn = false)
+            addMessage("❌ Нет соединения", isOwn = false)
         }
     }
 
@@ -89,5 +131,11 @@ class MainActivity : AppCompatActivity() {
 
         containerMessages.addView(tv, params)
         scrollMessages.post { scrollMessages.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        webSocket?.close(1000, "App closed")
+        client.dispatcher.executorService.shutdown()
     }
 }
