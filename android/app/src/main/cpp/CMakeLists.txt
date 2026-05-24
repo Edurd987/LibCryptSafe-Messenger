@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.10)
 project(cryptosafe)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 
-# Путь к корню проекта (5 уровней вверх от cpp/)
-get_filename_component(CORE_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..
-    ABSOLUTE)
+# Абсолютный путь — работает на Windows/MSYS2
+set(CORE_DIR "C:/msys64/home/79384/LibCryptSafe-Messenger")
+set(OPENSSL_ROOT "${CORE_DIR}/android/android_openssl-master/ssl_3")
 
 add_library(cryptosafe SHARED
     jni_bridge.cpp
@@ -20,11 +20,11 @@ target_include_directories(cryptosafe PRIVATE
     ${CORE_DIR}/LibCryptSafe/include
     ${CORE_DIR}/MessengerApp
     ${CORE_DIR}/TransportLayer
+    ${OPENSSL_ROOT}/include
 )
 
-find_package(OpenSSL REQUIRED)
 target_link_libraries(cryptosafe
-    OpenSSL::Crypto
+    ${OPENSSL_ROOT}/${ANDROID_ABI}/libcrypto.a
     log
     android
 )

@@ -5,3 +5,10 @@ build/
 *_log.txt
 .gradle/
 /android/app/build/
+android/.idea/
+android/app/.cxx/
+android/app/build/
+android/build/
+android/local.properties
+android/openssl.zip
+*.zip
