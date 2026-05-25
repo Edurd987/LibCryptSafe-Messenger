@@ -2,11 +2,13 @@ package com.libcryptsafe
 
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.util.Base64
 import android.view.Gravity
 import android.widget.*
 import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
@@ -17,11 +19,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
 
     private var webSocket: WebSocket? = null
+    private var handshakeDone = false
+    private var myPubKey: ByteArray? = null
+
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
-    // IP сервера — меняй здесь
     private val SERVER_URL = "ws://192.168.1.152:8080"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,23 +37,24 @@ class MainActivity : AppCompatActivity() {
         etMessage         = findViewById(R.id.et_message)
         tvStatus          = findViewById(R.id.tv_status)
 
-        // Инициализация ECDH
-        val pub = CryptoManager.generateKeypair()
-        if (pub != null) {
+        // Генерируем свою пару ключей
+        myPubKey = CryptoManager.generateKeypair()
+        if (myPubKey != null) {
             val fp = CryptoManager.getFingerprint()
-            tvStatus.text = "🔐 ${fp.take(8)}... | Подключение..."
-            // Локальный handshake для теста шифрования
-            CryptoManager.computeSharedKey(pub)
+            tvStatus.text = "🔑 ${fp.take(8)}... | Подключение..."
         }
 
-        // Подключаемся к relay серверу
         connectWebSocket()
 
         findViewById<Button>(R.id.btn_send).setOnClickListener {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
-                sendMessage(text)
-                etMessage.text.clear()
+                if (!handshakeDone) {
+                    addMessage("⏳ Ожидание второго пользователя...", isOwn = false)
+                } else {
+                    sendMessage(text)
+                    etMessage.text.clear()
+                }
             }
         }
     }
@@ -60,13 +65,44 @@ class MainActivity : AppCompatActivity() {
 
             override fun onOpen(ws: WebSocket, response: Response) {
                 runOnUiThread {
-                    tvStatus.text = "🟢 Подключено к $SERVER_URL"
+                    tvStatus.text = "🟡 Ожидание собеседника..."
                     addMessage("✅ Подключено к серверу", isOwn = false)
+                }
+                // Отправляем свой публичный ключ
+                myPubKey?.let { pub ->
+                    val json = JSONObject()
+                    json.put("type", "pubkey")
+                    json.put("key", Base64.encodeToString(pub, Base64.NO_WRAP))
+                    ws.send(json.toString())
+                }
+            }
+
+            override fun onMessage(ws: WebSocket, text: String) {
+                try {
+                    val json = JSONObject(text)
+                    if (json.getString("type") == "pubkey") {
+                        val peerPubKey = Base64.decode(
+                            json.getString("key"), Base64.NO_WRAP)
+
+                        // Вычисляем shared key
+                        val result = CryptoManager.computeSharedKey(peerPubKey)
+                        if (result == 0) {
+                            handshakeDone = true
+                            runOnUiThread {
+                                val fp = CryptoManager.getFingerprint()
+                                tvStatus.text = "🟢 E2EE активно | ${fp.take(8)}..."
+                                addMessage("🔐 ECDH handshake выполнен!", isOwn = false)
+                                addMessage("✅ Можно отправлять сообщения", isOwn = false)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // не JSON
                 }
             }
 
             override fun onMessage(ws: WebSocket, bytes: ByteString) {
-                // Получаем зашифрованное сообщение
+                if (!handshakeDone) return
                 val decrypted = CryptoManager.decrypt(bytes.toByteArray())
                 runOnUiThread {
                     if (decrypted != null) {
@@ -78,12 +114,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            override fun onMessage(ws: WebSocket, text: String) {
-                runOnUiThread {
-                    addMessage(text, isOwn = false)
-                }
-            }
-
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 runOnUiThread {
                     tvStatus.text = "🔴 Нет соединения"
@@ -92,21 +122,16 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                runOnUiThread {
-                    tvStatus.text = "🔴 Отключено"
-                }
+                runOnUiThread { tvStatus.text = "🔴 Отключено" }
             }
         })
     }
 
     private fun sendMessage(text: String) {
         addMessage(text, isOwn = true)
-
         val encrypted = CryptoManager.encrypt(text.toByteArray(Charsets.UTF_8))
-        if (encrypted != null && webSocket != null) {
-            webSocket!!.send(encrypted.toByteString())
-        } else {
-            addMessage("❌ Нет соединения", isOwn = false)
+        if (encrypted != null) {
+            webSocket?.send(encrypted.toByteString())
         }
     }
 
@@ -118,7 +143,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(if (isOwn) 0xFF2196F3.toInt() else 0xFFE0E0E0.toInt())
             setTextColor(if (isOwn) 0xFFFFFFFF.toInt() else 0xFF1A1A1A.toInt())
         }
-
         val params = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -128,7 +152,6 @@ class MainActivity : AppCompatActivity() {
             marginStart  = if (isOwn) 80 else 0
             marginEnd    = if (isOwn) 0 else 80
         }
-
         containerMessages.addView(tv, params)
         scrollMessages.post { scrollMessages.fullScroll(ScrollView.FOCUS_DOWN) }
     }
