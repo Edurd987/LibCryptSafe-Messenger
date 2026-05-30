@@ -10,6 +10,8 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import android.os.Handler
+import android.os.Looper
 import com.libcryptsafe.db.AppDatabase
 import com.libcryptsafe.db.MessageEntity
 import androidx.lifecycle.lifecycleScope
@@ -26,6 +28,10 @@ class MainActivity : AppCompatActivity() {
 
     private var webSocket: WebSocket? = null
     private var handshakeDone = false
+    private var isConnected = false
+    private var reconnectAttempts = 0
+    private var intentionallyClosed = false
+    private val reconnectHandler = Handler(Looper.getMainLooper())
     private lateinit var db: AppDatabase
     private var myPubKey: ByteArray? = null
 
@@ -70,10 +76,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun connectWebSocket() {
+        // Закрываем старое соединение перед созданием нового (анти-дубликат)
+        webSocket?.cancel()
+        webSocket = null
         val request = Request.Builder().url(SERVER_URL).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(ws: WebSocket, response: Response) {
+                isConnected = true
+                reconnectAttempts = 0
                 runOnUiThread {
                     tvStatus.text = "🟡 Ожидание собеседника..."
                     addMessage("✅ Подключено к серверу", isOwn = false)
@@ -125,14 +136,21 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                isConnected = false
+                handshakeDone = false
                 runOnUiThread {
-                    tvStatus.text = "🔴 Нет соединения"
-                    addMessage("❌ ${t.message}", isOwn = false)
+                    tvStatus.text = "🔴 Переподключение..."
                 }
+                scheduleReconnect()
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                runOnUiThread { tvStatus.text = "🔴 Отключено" }
+                isConnected = false
+                handshakeDone = false
+                if (!intentionallyClosed) {
+                    runOnUiThread { tvStatus.text = "🔴 Переподключение..." }
+                    scheduleReconnect()
+                }
             }
         })
     }
@@ -180,8 +198,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun scheduleReconnect() {
+        if (intentionallyClosed) return
+        if (isConnected) return
+        reconnectHandler.removeCallbacksAndMessages(null)
+        val delaySec = minOf(1 shl reconnectAttempts, 16)
+        reconnectAttempts++
+        reconnectHandler.postDelayed({
+            if (!isConnected && !intentionallyClosed) {
+                connectWebSocket()
+            }
+        }, delaySec * 1000L)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        intentionallyClosed = false
+        if (!isConnected && webSocket == null) {
+            connectWebSocket()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        intentionallyClosed = true
+        reconnectHandler.removeCallbacksAndMessages(null)
         webSocket?.close(1000, "App closed")
         client.dispatcher.executorService.shutdown()
     }
