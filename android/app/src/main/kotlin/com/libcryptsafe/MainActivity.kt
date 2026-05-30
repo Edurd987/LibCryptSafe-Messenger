@@ -10,6 +10,12 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import com.libcryptsafe.db.AppDatabase
+import com.libcryptsafe.db.MessageEntity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -20,6 +26,7 @@ class MainActivity : AppCompatActivity() {
 
     private var webSocket: WebSocket? = null
     private var handshakeDone = false
+    private lateinit var db: AppDatabase
     private var myPubKey: ByteArray? = null
 
     private val client = OkHttpClient.Builder()
@@ -36,6 +43,9 @@ class MainActivity : AppCompatActivity() {
         scrollMessages    = findViewById(R.id.scroll_messages)
         etMessage         = findViewById(R.id.et_message)
         tvStatus          = findViewById(R.id.tv_status)
+
+        db = AppDatabase.getInstance(this)
+        loadHistory()
 
         // Генерируем свою пару ключей
         myPubKey = CryptoManager.generateKeypair()
@@ -107,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (decrypted != null) {
                         val text = String(decrypted, Charsets.UTF_8)
-                        addMessage(text, isOwn = false)
+                        addMessage(text, isOwn = false, persist = true)
                     } else {
                         addMessage("❌ Ошибка расшифровки", isOwn = false)
                     }
@@ -128,14 +138,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sendMessage(text: String) {
-        addMessage(text, isOwn = true)
+        addMessage(text, isOwn = true, persist = true)
         val encrypted = CryptoManager.encrypt(text.toByteArray(Charsets.UTF_8))
         if (encrypted != null) {
             webSocket?.send(encrypted.toByteString())
         }
     }
 
-    private fun addMessage(text: String, isOwn: Boolean) {
+    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false) {
+        if (persist) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                db.messageDao().insert(MessageEntity(text = text, isOwn = isOwn))
+            }
+        }
         val tv = TextView(this).apply {
             this.text = text
             textSize  = 15f
@@ -154,6 +169,15 @@ class MainActivity : AppCompatActivity() {
         }
         containerMessages.addView(tv, params)
         scrollMessages.post { scrollMessages.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    private fun loadHistory() {
+        lifecycleScope.launch {
+            val history = withContext(Dispatchers.IO) { db.messageDao().getAllOnce() }
+            for (m in history) {
+                addMessage(m.text, m.isOwn, persist = false)
+            }
+        }
     }
 
     override fun onDestroy() {
