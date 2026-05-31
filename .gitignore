@@ -13,3 +13,7 @@ android/local.properties
 android/openssl.zip
 *.zip
 relay/node_modules/
+# Большие файлы моделей — не коммитим
+*.gguf
+*.safetensors
+relay/^C
