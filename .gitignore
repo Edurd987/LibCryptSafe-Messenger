@@ -17,3 +17,7 @@ relay/node_modules/
 *.gguf
 *.safetensors
 relay/^C
+
+# Локальные бэкапы при редизайне
+*_BACKUP.kt
+*_BACKUP.xml
