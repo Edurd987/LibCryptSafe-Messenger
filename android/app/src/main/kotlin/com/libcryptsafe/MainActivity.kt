@@ -73,6 +73,54 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        setupTabs()
+    }
+
+    private fun setupTabs() {
+        val tabChat   = findViewById<TextView>(R.id.tab_chat)
+        val tabNet    = findViewById<TextView>(R.id.tab_network)
+        val chatView  = findViewById<ScrollView>(R.id.scroll_messages)
+        val netView   = findViewById<LinearLayout>(R.id.container_network)
+        val inputBar  = findViewById<LinearLayout>(R.id.container_input)
+
+        tabChat.setOnClickListener {
+            chatView.visibility = android.view.View.VISIBLE
+            netView.visibility  = android.view.View.GONE
+            inputBar.visibility = android.view.View.VISIBLE
+            tabChat.setBackgroundResource(R.drawable.tab_active)
+            tabChat.setTextColor(0xFF7CFFB0.toInt())
+            tabNet.setBackgroundResource(R.drawable.tab_inactive)
+            tabNet.setTextColor(0xFF8A93A0.toInt())
+        }
+
+        tabNet.setOnClickListener {
+            chatView.visibility = android.view.View.GONE
+            netView.visibility  = android.view.View.VISIBLE
+            inputBar.visibility = android.view.View.GONE
+            tabNet.setBackgroundResource(R.drawable.tab_active)
+            tabNet.setTextColor(0xFF7CFFB0.toInt())
+            tabChat.setBackgroundResource(R.drawable.tab_inactive)
+            tabChat.setTextColor(0xFF8A93A0.toInt())
+            updateNetworkPanel()
+        }
+    }
+
+    private fun updateNetworkPanel() {
+        findViewById<TextView>(R.id.net_transport).text =
+            "Транспорт: WebSocket (OkHttp)"
+        findViewById<TextView>(R.id.net_status).text =
+            "Статус: " + if (isConnected) "🟢 Подключено" else "🔴 Отключено"
+        findViewById<TextView>(R.id.net_e2ee).text =
+            "E2EE: " + if (handshakeDone) "🟢 Активно (ECDH)" else "🟡 Ожидание handshake"
+        findViewById<TextView>(R.id.net_cipher).text =
+            "Шифр: ECDH (X25519) + AES-256-GCM"
+        findViewById<TextView>(R.id.net_fingerprint).text =
+            "Отпечаток: " + CryptoManager.getFingerprint().take(16) + "..."
+        findViewById<TextView>(R.id.net_server).text =
+            "Сервер: " + SERVER_URL
+        findViewById<TextView>(R.id.net_reconnects).text =
+            "Переподключений: " + reconnectAttempts
     }
 
     private fun connectWebSocket() {
@@ -172,9 +220,9 @@ class MainActivity : AppCompatActivity() {
         val tv = TextView(this).apply {
             this.text = text
             textSize  = 15f
-            setPadding(24, 12, 24, 12)
-            setBackgroundColor(if (isOwn) 0xFF2196F3.toInt() else 0xFFE0E0E0.toInt())
-            setTextColor(if (isOwn) 0xFFFFFFFF.toInt() else 0xFF1A1A1A.toInt())
+            setPadding(28, 18, 28, 18)
+            setBackgroundResource(if (isOwn) R.drawable.bubble_mine else R.drawable.bubble_other)
+            setTextColor(if (isOwn) 0xFFCFFFE0.toInt() else 0xFFD5DCE4.toInt())
         }
         val params = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,

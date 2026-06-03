@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.LibCryptSafe" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:statusBarColor">#070A0F</item>
+        <item name="android:navigationBarColor">#070A0F</item>
+        <item name="android:windowBackground">#070A0F</item>
+    </style>
+</resources>

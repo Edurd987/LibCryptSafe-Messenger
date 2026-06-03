@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <color android:color="#070A0F"/>
+    </item>
+    <item android:gravity="top|left">
+        <vector
+            android:width="450dp"
+            android:height="900dp"
+            android:viewportWidth="450"
+            android:viewportHeight="900">
+            <path
+                android:pathData="M30,0V900 M60,0V900 M90,0V900 M120,0V900 M150,0V900 M180,0V900 M210,0V900 M240,0V900 M270,0V900 M300,0V900 M330,0V900 M360,0V900 M390,0V900 M420,0V900 M0,30H450 M0,60H450 M0,90H450 M0,120H450 M0,150H450 M0,180H450 M0,210H450 M0,240H450 M0,270H450 M0,300H450 M0,330H450 M0,360H450 M0,390H450 M0,420H450 M0,450H450 M0,480H450 M0,510H450 M0,540H450 M0,570H450 M0,600H450 M0,630H450 M0,660H450 M0,690H450 M0,720H450 M0,750H450 M0,780H450 M0,810H450 M0,840H450 M0,870H450"
+                android:strokeColor="#0E1620"
+                android:strokeWidth="0.7"/>
+        </vector>
+    </item>
+</layer-list>

@@ -5,37 +5,78 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="16dp"
-    android:background="#F5F5F5">
-
-    <!-- Заголовок -->
-    <TextView
+    android:background="@drawable/bg_grid">
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="LibCryptSafe Messenger"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:textColor="#1A1A1A"
-        android:paddingBottom="8dp"/>
-
-    <!-- Статус шифрования -->
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="14dp">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LibCryptSafe"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="#EAF1EC"/>
+    </LinearLayout>
     <TextView
         android:id="@+id/tv_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="🔐 E2EE активно"
         android:textSize="12sp"
-        android:textColor="#4CAF50"
-        android:paddingBottom="16dp"/>
+        android:textColor="#00FF66"
+        android:paddingBottom="14dp"/>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingBottom="14dp">
+        <TextView
+            android:id="@+id/tab_chat"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Чат"
+            android:gravity="center"
+            android:padding="9dp"
+            android:textColor="#7CFFB0"
+            android:textSize="13sp"
+            android:background="@drawable/tab_active"/>
+        <TextView
+            android:id="@+id/tab_network"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Сеть"
+            android:gravity="center"
+            android:padding="9dp"
+            android:layout_marginStart="8dp"
+            android:textColor="#8A93A0"
+            android:textSize="13sp"
+            android:background="@drawable/tab_inactive"/>
+        <TextView
+            android:id="@+id/tab_more"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Ещё"
+            android:gravity="center"
+            android:padding="9dp"
+            android:layout_marginStart="8dp"
+            android:textColor="#8A93A0"
+            android:textSize="13sp"
+            android:background="@drawable/tab_inactive"/>
+    </LinearLayout>
 
-    <!-- Список сообщений -->
     <ScrollView
         android:id="@+id/scroll_messages"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#FFFFFF"
-        android:padding="8dp">
-
+        android:background="@drawable/glass_card"
+        android:padding="12dp">
         <LinearLayout
             android:id="@+id/container_messages"
             android:layout_width="match_parent"
@@ -43,32 +84,108 @@
             android:orientation="vertical"/>
     </ScrollView>
 
-    <!-- Панель ввода -->
     <LinearLayout
+        android:id="@+id/container_network"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:background="@drawable/glass_card"
+        android:padding="18dp"
+        android:visibility="gone">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ДИАГНОСТИКА СОЕДИНЕНИЯ"
+            android:textColor="#7CFFB0"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:paddingBottom="16dp"/>
+        <TextView
+            android:id="@+id/net_transport"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Транспорт: —"
+            android:textColor="#D5DCE4"
+            android:textSize="14sp"
+            android:paddingBottom="12dp"/>
+        <TextView
+            android:id="@+id/net_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Статус: —"
+            android:textColor="#D5DCE4"
+            android:textSize="14sp"
+            android:paddingBottom="12dp"/>
+        <TextView
+            android:id="@+id/net_e2ee"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="E2EE: —"
+            android:textColor="#D5DCE4"
+            android:textSize="14sp"
+            android:paddingBottom="12dp"/>
+        <TextView
+            android:id="@+id/net_cipher"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Шифр: —"
+            android:textColor="#D5DCE4"
+            android:textSize="14sp"
+            android:paddingBottom="12dp"/>
+        <TextView
+            android:id="@+id/net_fingerprint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Отпечаток: —"
+            android:textColor="#D5DCE4"
+            android:textSize="14sp"
+            android:paddingBottom="12dp"/>
+        <TextView
+            android:id="@+id/net_server"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Сервер: —"
+            android:textColor="#D5DCE4"
+            android:textSize="14sp"
+            android:paddingBottom="12dp"/>
+        <TextView
+            android:id="@+id/net_reconnects"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Переподключений: —"
+            android:textColor="#D5DCE4"
+            android:textSize="14sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/container_input"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:paddingTop="8dp">
-
+        android:gravity="center_vertical"
+        android:paddingTop="14dp">
         <EditText
             android:id="@+id/et_message"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="Сообщение..."
-            android:background="#FFFFFF"
-            android:padding="12dp"
+            android:textColorHint="#6B7480"
+            android:textColor="#EAF1EC"
+            android:background="@drawable/glass_input"
+            android:padding="14dp"
             android:textSize="16sp"/>
-
         <Button
             android:id="@+id/btn_send"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:padding="0dp"
+            android:gravity="center"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
             android:text="▶"
             android:textSize="18sp"
-            android:layout_marginStart="8dp"
-            android:backgroundTint="#2196F3"
-            android:textColor="#FFFFFF"/>
+            android:layout_marginStart="9dp"
+            android:background="@drawable/btn_send_bg"
+            android:textColor="#06210F"/>
     </LinearLayout>
-
 </LinearLayout>
