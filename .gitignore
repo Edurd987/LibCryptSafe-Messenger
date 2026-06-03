@@ -21,3 +21,4 @@ relay/^C
 # Локальные бэкапы при редизайне
 *_BACKUP.kt
 *_BACKUP.xml
+*_BACKUP
