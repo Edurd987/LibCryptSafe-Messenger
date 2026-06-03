@@ -75,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupTabs()
+        setupClearHistory()
     }
 
     private fun setupTabs() {
@@ -103,6 +104,24 @@ class MainActivity : AppCompatActivity() {
             tabChat.setBackgroundResource(R.drawable.tab_inactive)
             tabChat.setTextColor(0xFF8A93A0.toInt())
             updateNetworkPanel()
+        }
+    }
+
+    private fun setupClearHistory() {
+        findViewById<TextView>(R.id.tv_title).setOnLongClickListener {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Очистить историю?")
+                .setMessage("Все сообщения будут удалены с этого устройства. Действие необратимо.")
+                .setPositiveButton("Очистить") { _, _ ->
+                    lifecycleScope.launch {
+                        withContext(Dispatchers.IO) { db.messageDao().clearAll() }
+                        containerMessages.removeAllViews()
+                        addMessage("🗑 История очищена", isOwn = false)
+                    }
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+            true
         }
     }
 
