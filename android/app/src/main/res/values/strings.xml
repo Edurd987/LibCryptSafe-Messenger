@@ -1,4 +1,35 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LibCryptSafe</string>
+    <string name="e2ee_active">🔐 E2EE Active</string>
+    <string name="msg_hint">Message...</string>
+
+    <string name="tab_chat">Chat</string>
+    <string name="tab_network">Network</string>
+    <string name="tab_more">More</string>
+    <string name="diagnostics_title">CONNECTION DIAGNOSTICS</string>
+
+    <string name="waiting_peer">⏳ Waiting for the second user...</string>
+    <string name="clear_history_title">Clear history?</string>
+    <string name="clear_history_msg">All messages will be deleted from this device. This action is irreversible.</string>
+    <string name="btn_clear">Clear</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="status_connected">✅ Connected to server</string>
+    <string name="can_send">✅ Ready to send messages</string>
+    <string name="decrypt_error">❌ Decryption error</string>
+
+    <string name="net_transport">Transport: WebSocket (OkHttp)</string>
+    <string name="net_status">Status: %1$s</string>
+    <string name="net_status_on">🟢 Connected</string>
+    <string name="net_status_off">🔴 Disconnected</string>
+    <string name="net_cipher">Cipher: ECDH (X25519) + AES-256-GCM</string>
+    <string name="net_fingerprint">Fingerprint: %1$s...</string>
+    <string name="net_server">Server: %1$s</string>
+    <string name="net_reconnects">Reconnections: %1$d</string>
+    <string name="net_e2ee">E2EE: %1$s</string>
+    <string name="status_connecting">🔑 %1$s... | Connecting...</string>
+    <string name="e2ee_on">🟢 Active (ECDH)</string>
+    <string name="e2ee_waiting">🟡 Waiting handshake</string>
+    <string name="waiting_companion">🟡 Waiting for companion...</string>
+    <string name="handshake_done">🔐 ECDH handshake complete!</string>
+    <string name="reconnecting">🔴 Reconnecting...</string>
 </resources>

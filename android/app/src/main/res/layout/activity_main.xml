@@ -16,7 +16,7 @@
             android:id="@+id/tv_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="LibCryptSafe"
+            android:text="@string/app_name"
             android:textSize="20sp"
             android:textStyle="bold"
             android:textColor="#EAF1EC"/>
@@ -25,7 +25,7 @@
         android:id="@+id/tv_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="🔐 E2EE активно"
+        android:text="@string/e2ee_active"
         android:textSize="12sp"
         android:textColor="#00FF66"
         android:paddingBottom="14dp"/>
@@ -39,7 +39,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Чат"
+            android:text="@string/tab_chat"
             android:gravity="center"
             android:padding="9dp"
             android:textColor="#7CFFB0"
@@ -50,7 +50,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Сеть"
+            android:text="@string/tab_network"
             android:gravity="center"
             android:padding="9dp"
             android:layout_marginStart="8dp"
@@ -62,7 +62,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Ещё"
+            android:text="@string/tab_more"
             android:gravity="center"
             android:padding="9dp"
             android:layout_marginStart="8dp"
@@ -97,7 +97,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="ДИАГНОСТИКА СОЕДИНЕНИЯ"
+            android:text="@string/diagnostics_title"
             android:textColor="#7CFFB0"
             android:textSize="12sp"
             android:textStyle="bold"
@@ -106,7 +106,7 @@
             android:id="@+id/net_transport"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Транспорт: —"
+            android:text="@string/net_transport"
             android:textColor="#D5DCE4"
             android:textSize="14sp"
             android:paddingBottom="12dp"/>
@@ -114,7 +114,7 @@
             android:id="@+id/net_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Статус: —"
+            android:text="@string/net_status_off"
             android:textColor="#D5DCE4"
             android:textSize="14sp"
             android:paddingBottom="12dp"/>
@@ -122,7 +122,7 @@
             android:id="@+id/net_e2ee"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="E2EE: —"
+            android:text="@string/net_status_off"
             android:textColor="#D5DCE4"
             android:textSize="14sp"
             android:paddingBottom="12dp"/>
@@ -130,7 +130,7 @@
             android:id="@+id/net_cipher"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Шифр: —"
+            android:text="@string/net_cipher"
             android:textColor="#D5DCE4"
             android:textSize="14sp"
             android:paddingBottom="12dp"/>
@@ -138,7 +138,7 @@
             android:id="@+id/net_fingerprint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Отпечаток: —"
+            android:text="@string/diagnostics_title"
             android:textColor="#D5DCE4"
             android:textSize="14sp"
             android:paddingBottom="12dp"/>
@@ -146,7 +146,7 @@
             android:id="@+id/net_server"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Сервер: —"
+            android:text="@string/net_transport"
             android:textColor="#D5DCE4"
             android:textSize="14sp"
             android:paddingBottom="12dp"/>
@@ -154,7 +154,7 @@
             android:id="@+id/net_reconnects"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Переподключений: —"
+            android:text="@string/net_transport"
             android:textColor="#D5DCE4"
             android:textSize="14sp"/>
     </LinearLayout>
@@ -171,7 +171,7 @@
             android:layout_width="0dp"
             android:layout_height="52dp"
             android:layout_weight="1"
-            android:hint="Сообщение..."
+            android:hint="@string/msg_hint"
             android:textColorHint="#6B7480"
             android:textColor="#EAF1EC"
             android:background="@drawable/glass_input"

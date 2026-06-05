@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">LibCryptSafe</string>
+    <string name="e2ee_active">🔐 E2EE активно</string>
+    <string name="msg_hint">Сообщение...</string>
+
+    <string name="tab_chat">Чат</string>
+    <string name="tab_network">Сеть</string>
+    <string name="tab_more">Ещё</string>
+    <string name="diagnostics_title">ДИАГНОСТИКА СОЕДИНЕНИЯ</string>
+
+    <string name="waiting_peer">⏳ Ожидание второго пользователя...</string>
+    <string name="clear_history_title">Очистить историю?</string>
+    <string name="clear_history_msg">Все сообщения будут удалены с этого устройства. Действие необратимо.</string>
+    <string name="btn_clear">Очистить</string>
+    <string name="btn_cancel">Отмена</string>
+    <string name="status_connected">✅ Подключено к серверу</string>
+    <string name="can_send">✅ Можно отправлять сообщения</string>
+    <string name="decrypt_error">❌ Ошибка расшифровки</string>
+
+    <string name="net_transport">Транспорт: WebSocket (OkHttp)</string>
+    <string name="net_status">Статус: %1$s</string>
+    <string name="net_status_on">🟢 Подключено</string>
+    <string name="net_status_off">🔴 Отключено</string>
+    <string name="net_cipher">Шифр: ECDH (X25519) + AES-256-GCM</string>
+    <string name="net_fingerprint">Отпечаток: %1$s...</string>
+    <string name="net_server">Сервер: %1$s</string>
+    <string name="net_reconnects">Переподключений: %1$d</string>
+    <string name="net_e2ee">E2EE: %1$s</string>
+    <string name="status_connecting">🔑 %1$s... | Подключение...</string>
+    <string name="e2ee_on">🟢 Активно (ECDH)</string>
+    <string name="e2ee_waiting">🟡 Ожидание handshake</string>
+    <string name="waiting_companion">🟡 Ожидание собеседника...</string>
+    <string name="handshake_done">🔐 ECDH handshake выполнен!</string>
+    <string name="reconnecting">🔴 Переподключение...</string>
+</resources>

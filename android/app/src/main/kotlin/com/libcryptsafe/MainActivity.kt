@@ -57,7 +57,7 @@ class MainActivity : AppCompatActivity() {
         myPubKey = CryptoManager.generateKeypair()
         if (myPubKey != null) {
             val fp = CryptoManager.getFingerprint()
-            tvStatus.text = "🔑 ${fp.take(8)}... | Подключение..."
+            tvStatus.text = getString(R.string.status_connecting, fp.take(8))
         }
 
         connectWebSocket()
@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
                 if (!handshakeDone) {
-                    addMessage("⏳ Ожидание второго пользователя...", isOwn = false)
+                    addMessage(getString(R.string.waiting_peer), isOwn = false)
                 } else {
                     sendMessage(text)
                     etMessage.text.clear()
@@ -110,16 +110,16 @@ class MainActivity : AppCompatActivity() {
     private fun setupClearHistory() {
         findViewById<TextView>(R.id.tv_title).setOnLongClickListener {
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Очистить историю?")
-                .setMessage("Все сообщения будут удалены с этого устройства. Действие необратимо.")
-                .setPositiveButton("Очистить") { _, _ ->
+                .setTitle(getString(R.string.clear_history_title))
+                .setMessage(getString(R.string.clear_history_msg))
+                .setPositiveButton(getString(R.string.btn_clear)) { _, _ ->
                     lifecycleScope.launch {
                         withContext(Dispatchers.IO) { db.messageDao().clearAll() }
                         containerMessages.removeAllViews()
                         addMessage("🗑 История очищена", isOwn = false)
                     }
                 }
-                .setNegativeButton("Отмена", null)
+                .setNegativeButton(getString(R.string.btn_cancel), null)
                 .show()
             true
         }
@@ -127,19 +127,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateNetworkPanel() {
         findViewById<TextView>(R.id.net_transport).text =
-            "Транспорт: WebSocket (OkHttp)"
+            getString(R.string.net_transport)
         findViewById<TextView>(R.id.net_status).text =
-            "Статус: " + if (isConnected) "🟢 Подключено" else "🔴 Отключено"
+            getString(R.string.net_status, if (isConnected) getString(R.string.net_status_on) else getString(R.string.net_status_off))
         findViewById<TextView>(R.id.net_e2ee).text =
-            "E2EE: " + if (handshakeDone) "🟢 Активно (ECDH)" else "🟡 Ожидание handshake"
+            getString(R.string.net_e2ee, if (handshakeDone) getString(R.string.e2ee_on) else getString(R.string.e2ee_waiting))
         findViewById<TextView>(R.id.net_cipher).text =
-            "Шифр: ECDH (X25519) + AES-256-GCM"
+            getString(R.string.net_cipher)
         findViewById<TextView>(R.id.net_fingerprint).text =
-            "Отпечаток: " + CryptoManager.getFingerprint().take(16) + "..."
+            getString(R.string.net_fingerprint, CryptoManager.getFingerprint().take(16))
         findViewById<TextView>(R.id.net_server).text =
-            "Сервер: " + SERVER_URL
+            getString(R.string.net_server, SERVER_URL)
         findViewById<TextView>(R.id.net_reconnects).text =
-            "Переподключений: " + reconnectAttempts
+            getString(R.string.net_reconnects, reconnectAttempts)
     }
 
     private fun connectWebSocket() {
@@ -153,8 +153,8 @@ class MainActivity : AppCompatActivity() {
                 isConnected = true
                 reconnectAttempts = 0
                 runOnUiThread {
-                    tvStatus.text = "🟡 Ожидание собеседника..."
-                    addMessage("✅ Подключено к серверу", isOwn = false)
+                    tvStatus.text = getString(R.string.waiting_companion)
+                    addMessage(getString(R.string.status_connected), isOwn = false)
                 }
                 // Отправляем свой публичный ключ
                 myPubKey?.let { pub ->
@@ -179,8 +179,8 @@ class MainActivity : AppCompatActivity() {
                             runOnUiThread {
                                 val fp = CryptoManager.getFingerprint()
                                 tvStatus.text = "🟢 E2EE активно | ${fp.take(8)}..."
-                                addMessage("🔐 ECDH handshake выполнен!", isOwn = false)
-                                addMessage("✅ Можно отправлять сообщения", isOwn = false)
+                                addMessage(getString(R.string.handshake_done), isOwn = false)
+                                addMessage(getString(R.string.can_send), isOwn = false)
                             }
                         }
                     }
@@ -197,7 +197,7 @@ class MainActivity : AppCompatActivity() {
                         val text = String(decrypted, Charsets.UTF_8)
                         addMessage(text, isOwn = false, persist = true)
                     } else {
-                        addMessage("❌ Ошибка расшифровки", isOwn = false)
+                        addMessage(getString(R.string.decrypt_error), isOwn = false)
                     }
                 }
             }
@@ -206,7 +206,7 @@ class MainActivity : AppCompatActivity() {
                 isConnected = false
                 handshakeDone = false
                 runOnUiThread {
-                    tvStatus.text = "🔴 Переподключение..."
+                    tvStatus.text = getString(R.string.reconnecting)
                 }
                 scheduleReconnect()
             }
@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity() {
                 isConnected = false
                 handshakeDone = false
                 if (!intentionallyClosed) {
-                    runOnUiThread { tvStatus.text = "🔴 Переподключение..." }
+                    runOnUiThread { tvStatus.text = getString(R.string.reconnecting) }
                     scheduleReconnect()
                 }
             }
