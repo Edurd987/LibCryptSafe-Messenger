@@ -32,4 +32,12 @@
     <string name="waiting_companion">🟡 Waiting for companion...</string>
     <string name="handshake_done">🔐 ECDH handshake complete!</string>
     <string name="reconnecting">🔴 Reconnecting...</string>
+    <string name="tab_more_title">SETTINGS</string>
+    <string name="screen_security_title">Screen protection</string>
+    <string name="screen_security_desc">Blocks screenshots and screen recording</string>
+    <string name="screen_security_on">🛡 Screen protection ON</string>
+    <string name="screen_security_off">⚠️ Screen protection OFF</string>
+    <string name="screen_warn_title">Disable screen protection?</string>
+    <string name="screen_warn_msg">Screenshots and screen recording will become possible. Malicious apps may capture your messages. You take this risk on yourself.</string>
+    <string name="btn_disable">Disable</string>
 </resources>

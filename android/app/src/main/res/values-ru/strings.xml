@@ -32,4 +32,12 @@
     <string name="waiting_companion">🟡 Ожидание собеседника...</string>
     <string name="handshake_done">🔐 ECDH handshake выполнен!</string>
     <string name="reconnecting">🔴 Переподключение...</string>
+    <string name="tab_more_title">НАСТРОЙКИ</string>
+    <string name="screen_security_title">Защита экрана</string>
+    <string name="screen_security_desc">Блокирует скриншоты и запись экрана</string>
+    <string name="screen_security_on">🛡 Защита экрана ВКЛ</string>
+    <string name="screen_security_off">⚠️ Защита экрана ВЫКЛ</string>
+    <string name="screen_warn_title">Отключить защиту экрана?</string>
+    <string name="screen_warn_msg">Скриншоты и запись экрана станут возможны. Вредоносные приложения смогут перехватить ваши сообщения. Вы берёте этот риск на себя.</string>
+    <string name="btn_disable">Отключить</string>
 </resources>

@@ -4,6 +4,7 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Base64
 import android.view.Gravity
+import android.view.WindowManager
 import android.widget.*
 import okhttp3.*
 import okio.ByteString
@@ -43,6 +44,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyScreenSecurity()
         setContentView(R.layout.activity_main)
 
         containerMessages = findViewById(R.id.container_messages)
@@ -76,6 +78,7 @@ class MainActivity : AppCompatActivity() {
 
         setupTabs()
         setupClearHistory()
+        setupMore()
     }
 
     private fun setupTabs() {
@@ -84,6 +87,8 @@ class MainActivity : AppCompatActivity() {
         val chatView  = findViewById<ScrollView>(R.id.scroll_messages)
         val netView   = findViewById<LinearLayout>(R.id.container_network)
         val inputBar  = findViewById<LinearLayout>(R.id.container_input)
+        val tabMore   = findViewById<TextView>(R.id.tab_more)
+        val moreView  = findViewById<LinearLayout>(R.id.container_more)
 
         tabChat.setOnClickListener {
             chatView.visibility = android.view.View.VISIBLE
@@ -93,6 +98,9 @@ class MainActivity : AppCompatActivity() {
             tabChat.setTextColor(0xFF7CFFB0.toInt())
             tabNet.setBackgroundResource(R.drawable.tab_inactive)
             tabNet.setTextColor(0xFF8A93A0.toInt())
+            moreView.visibility = android.view.View.GONE
+            tabMore.setBackgroundResource(R.drawable.tab_inactive)
+            tabMore.setTextColor(0xFF8A93A0.toInt())
         }
 
         tabNet.setOnClickListener {
@@ -103,7 +111,22 @@ class MainActivity : AppCompatActivity() {
             tabNet.setTextColor(0xFF7CFFB0.toInt())
             tabChat.setBackgroundResource(R.drawable.tab_inactive)
             tabChat.setTextColor(0xFF8A93A0.toInt())
+            moreView.visibility = android.view.View.GONE
+            tabMore.setBackgroundResource(R.drawable.tab_inactive)
+            tabMore.setTextColor(0xFF8A93A0.toInt())
             updateNetworkPanel()
+        }
+        tabMore.setOnClickListener {
+            chatView.visibility = android.view.View.GONE
+            netView.visibility  = android.view.View.GONE
+            moreView.visibility = android.view.View.VISIBLE
+            inputBar.visibility = android.view.View.GONE
+            tabMore.setBackgroundResource(R.drawable.tab_active)
+            tabMore.setTextColor(0xFF7CFFB0.toInt())
+            tabChat.setBackgroundResource(R.drawable.tab_inactive)
+            tabChat.setTextColor(0xFF8A93A0.toInt())
+            tabNet.setBackgroundResource(R.drawable.tab_inactive)
+            tabNet.setTextColor(0xFF8A93A0.toInt())
         }
     }
 
@@ -123,6 +146,51 @@ class MainActivity : AppCompatActivity() {
                 .show()
             true
         }
+    }
+
+    private fun isScreenSecure(): Boolean {
+        val prefs = getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+        return prefs.getBoolean("screen_security", true)  // ВКЛ по умолчанию
+    }
+
+    private fun applyScreenSecurity() {
+        if (isScreenSecure()) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    private fun setupMore() {
+        val sw = findViewById<android.widget.Switch>(R.id.switch_screen_security)
+        sw.isChecked = isScreenSecure()
+        sw.setOnCheckedChangeListener { _, checked ->
+            if (!checked) {
+                // Отключают защиту -> ЧЕСТНЫЙ баннер с риском
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.screen_warn_title))
+                    .setMessage(getString(R.string.screen_warn_msg))
+                    .setPositiveButton(getString(R.string.btn_disable)) { _, _ ->
+                        saveScreenSecurity(false)
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                    .setNegativeButton(getString(R.string.btn_cancel)) { _, _ ->
+                        sw.isChecked = true  // откатываем тумблер обратно
+                    }
+                    .setOnCancelListener {
+                        sw.isChecked = true
+                    }
+                    .show()
+            } else {
+                saveScreenSecurity(true)
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
+
+    private fun saveScreenSecurity(value: Boolean) {
+        getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+            .edit().putBoolean("screen_security", value).apply()
     }
 
     private fun updateNetworkPanel() {
