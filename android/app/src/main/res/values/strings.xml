@@ -40,4 +40,11 @@
     <string name="screen_warn_title">Disable screen protection?</string>
     <string name="screen_warn_msg">Screenshots and screen recording will become possible. Malicious apps may capture your messages. You take this risk on yourself.</string>
     <string name="btn_disable">Disable</string>
+    <string name="env_section_title">DEVICE ENVIRONMENT</string>
+    <string name="env_checking">Checking…</string>
+    <string name="env_clean">No obvious signs of compromise detected</string>
+    <string name="env_root">⚠️ Root access detected. Protection may be bypassed.</string>
+    <string name="env_emulator">⚠️ Running in an emulator.</string>
+    <string name="env_debugger">⚠️ A debugger is attached.</string>
+    <string name="env_note">This is an indicator, not proof. Absence of signs does not guarantee safety.</string>
 </resources>

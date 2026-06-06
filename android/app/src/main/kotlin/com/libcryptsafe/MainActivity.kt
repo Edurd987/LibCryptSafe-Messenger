@@ -79,6 +79,7 @@ class MainActivity : AppCompatActivity() {
         setupTabs()
         setupClearHistory()
         setupMore()
+        checkEnvironment()
     }
 
     private fun setupTabs() {
@@ -158,6 +159,26 @@ class MainActivity : AppCompatActivity() {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    private fun checkEnvironment() {
+        val report = EnvironmentSecurity.analyze(this)
+        val statusView = findViewById<TextView>(R.id.tv_env_status)
+        val noteView = findViewById<TextView>(R.id.tv_env_note)
+
+        if (report.isClean) {
+            statusView.text = getString(R.string.env_clean)
+            statusView.setTextColor(0xFF7CFFB0.toInt())
+            noteView.visibility = android.view.View.GONE
+        } else {
+            val problems = mutableListOf<String>()
+            if (report.rootDetected) problems.add(getString(R.string.env_root))
+            if (report.isEmulator) problems.add(getString(R.string.env_emulator))
+            if (report.debuggerAttached) problems.add(getString(R.string.env_debugger))
+            statusView.text = problems.joinToString("\n")
+            statusView.setTextColor(0xFFFFB84D.toInt())
+            noteView.visibility = android.view.View.VISIBLE
         }
     }
 

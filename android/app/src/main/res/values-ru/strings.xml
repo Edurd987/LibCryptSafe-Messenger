@@ -40,4 +40,11 @@
     <string name="screen_warn_title">Отключить защиту экрана?</string>
     <string name="screen_warn_msg">Скриншоты и запись экрана станут возможны. Вредоносные приложения смогут перехватить ваши сообщения. Вы берёте этот риск на себя.</string>
     <string name="btn_disable">Отключить</string>
+    <string name="env_section_title">СРЕДА УСТРОЙСТВА</string>
+    <string name="env_checking">Проверка…</string>
+    <string name="env_clean">Явных признаков компрометации не обнаружено</string>
+    <string name="env_root">⚠️ Обнаружен root-доступ. Защита может быть обойдена.</string>
+    <string name="env_emulator">⚠️ Запущено в эмуляторе.</string>
+    <string name="env_debugger">⚠️ Подключён отладчик.</string>
+    <string name="env_note">Это признак, а не доказательство. Отсутствие признаков не гарантирует безопасность.</string>
 </resources>
