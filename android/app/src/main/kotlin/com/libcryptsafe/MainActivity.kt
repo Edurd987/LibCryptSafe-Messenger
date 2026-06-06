@@ -180,6 +180,16 @@ class MainActivity : AppCompatActivity() {
             statusView.setTextColor(0xFFFFB84D.toInt())
             noteView.visibility = android.view.View.VISIBLE
         }
+
+        // Проверка целостности подписи APK
+        val integrityView = findViewById<TextView>(R.id.tv_integrity_status)
+        if (EnvironmentSecurity.isIntegrityOk(this)) {
+            integrityView.text = getString(R.string.integrity_ok)
+            integrityView.setTextColor(0xFF7CFFB0.toInt())
+        } else {
+            integrityView.text = getString(R.string.integrity_fail)
+            integrityView.setTextColor(0xFFFFB84D.toInt())
+        }
     }
 
     private fun setupMore() {

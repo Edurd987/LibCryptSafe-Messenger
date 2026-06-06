@@ -1,6 +1,8 @@
 package com.libcryptsafe
 
 import android.content.Context
+import android.content.pm.PackageManager
+import java.security.MessageDigest
 import android.os.Build
 import android.os.Debug
 import java.io.File
@@ -80,5 +82,49 @@ object EnvironmentSecurity {
     // ── ОТЛАДЧИК подключён ──
     private fun checkDebugger(): Boolean {
         return Debug.isDebuggerConnected() || Debug.waitingForDebugger()
+    }
+    // Эталон debug-подписи. На release-этапе заменить через BuildConfig
+    // (архитектура двух ключей: debug-хеш НЕ должен попасть в release).
+    private const val DEBUG_SIGNATURE_SHA256 =
+        "4ee3f65da019d7ed59c7ca23ad50d95d067d89214ede8077f27aaae129007a88"
+
+    /**
+     * Проверка целостности: совпадает ли подпись с эталоном.
+     * true = подпись наша, false = подмена/переподписан.
+     * ЧЕСТНАЯ ГРАНИЦА: на root обходится, реверсер выпилит проверку.
+     * Отсекает ленивую переподписку, не абсолют.
+     */
+    fun isIntegrityOk(context: Context): Boolean {
+        val current = getSignatureSha256(context)
+        return current.equals(DEBUG_SIGNATURE_SHA256, ignoreCase = true)
+    }
+
+    /**
+     * SHA-256 хеш подписи приложения (HEX).
+     * Современный API: GET_SIGNING_CERTIFICATES (API 28+).
+     * Для APK integrity: сравнить с эталоном -> подмена детектируется.
+     * ЧЕСТНАЯ ГРАНИЦА: на root можно обойти, реверсер выпилит проверку.
+     * Поднимает планку против ленивой переподписи, не абсолют.
+     */
+    fun getSignatureSha256(context: Context): String {
+        return try {
+            val pm = context.packageManager
+            val pkg = context.packageName
+            val signatures = if (android.os.Build.VERSION.SDK_INT >= 28) {
+                val info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES)
+                info.signingInfo?.apkContentsSigners
+            } else {
+                @Suppress("DEPRECATION")
+                val info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES)
+                @Suppress("DEPRECATION")
+                info.signatures
+            }
+            if (signatures.isNullOrEmpty()) return "unknown"
+            val md = MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(signatures[0].toByteArray())
+            digest.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            "error: ${e.message}"
+        }
     }
 }

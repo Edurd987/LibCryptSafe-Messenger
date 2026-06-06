@@ -47,4 +47,6 @@
     <string name="env_emulator">⚠️ Running in an emulator.</string>
     <string name="env_debugger">⚠️ A debugger is attached.</string>
     <string name="env_note">This is an indicator, not proof. Absence of signs does not guarantee safety.</string>
+    <string name="integrity_ok">🟢 App integrity verified</string>
+    <string name="integrity_fail">⚠️ App signature mismatch — possible tampering</string>
 </resources>

@@ -47,4 +47,6 @@
     <string name="env_emulator">⚠️ Запущено в эмуляторе.</string>
     <string name="env_debugger">⚠️ Подключён отладчик.</string>
     <string name="env_note">Это признак, а не доказательство. Отсутствие признаков не гарантирует безопасность.</string>
+    <string name="integrity_ok">🟢 Целостность приложения подтверждена</string>
+    <string name="integrity_fail">⚠️ Подпись приложения изменена — возможна подмена</string>
 </resources>
