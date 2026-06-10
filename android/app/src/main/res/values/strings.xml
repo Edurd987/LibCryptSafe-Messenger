@@ -49,4 +49,6 @@
     <string name="env_note">This is an indicator, not proof. Absence of signs does not guarantee safety.</string>
     <string name="integrity_ok">🟢 App integrity verified</string>
     <string name="integrity_fail">⚠️ App signature mismatch — possible tampering</string>
+    <string name="lock_title">Unlock LibCryptSafe</string>
+    <string name="lock_subtitle">Confirm your identity to access messages</string>
 </resources>

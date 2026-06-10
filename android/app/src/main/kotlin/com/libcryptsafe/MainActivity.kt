@@ -19,6 +19,11 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.biometric.BiometricPrompt
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
+import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
 
@@ -53,17 +58,51 @@ class MainActivity : AppCompatActivity() {
         tvStatus          = findViewById(R.id.tv_status)
 
         db = AppDatabase.getInstance(this)
-        loadHistory()
 
-        // Генерируем свою пару ключей
+        checkAppLock()
+    }
+
+    // Проверка блокировки приложения при старте
+    private fun checkAppLock() {
+        val prefs = getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+        val locked = prefs.getBoolean("app_lock_enabled", false)
+        if (!locked) {
+            startApp()
+            return
+        }
+        val bm = BiometricManager.from(this)
+        val can = bm.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
+        if (can != BiometricManager.BIOMETRIC_SUCCESS) {
+            startApp()
+            return
+        }
+        val executor = ContextCompat.getMainExecutor(this)
+        val prompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    startApp()
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    finish()
+                }
+            })
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(getString(R.string.lock_title))
+            .setSubtitle(getString(R.string.lock_subtitle))
+            .setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
+            .build()
+        prompt.authenticate(promptInfo)
+    }
+
+    // Запуск приложения после разблокировки (или если блокировка выкл)
+    private fun startApp() {
+        loadHistory()
         myPubKey = CryptoManager.generateKeypair()
         if (myPubKey != null) {
             val fp = CryptoManager.getFingerprint()
             tvStatus.text = getString(R.string.status_connecting, fp.take(8))
         }
-
         connectWebSocket()
-
         findViewById<Button>(R.id.btn_send).setOnClickListener {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -75,7 +114,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
         setupTabs()
         setupClearHistory()
         setupMore()

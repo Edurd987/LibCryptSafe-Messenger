@@ -49,4 +49,6 @@
     <string name="env_note">Это признак, а не доказательство. Отсутствие признаков не гарантирует безопасность.</string>
     <string name="integrity_ok">🟢 Целостность приложения подтверждена</string>
     <string name="integrity_fail">⚠️ Подпись приложения изменена — возможна подмена</string>
+    <string name="lock_title">Разблокировка LibCryptSafe</string>
+    <string name="lock_subtitle">Подтвердите личность для доступа к сообщениям</string>
 </resources>
