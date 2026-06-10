@@ -20,6 +20,7 @@ LibCryptSafe Messenger — защищённый E2E мессенджер.
 - Детектор небезопасной среды (root/эмулятор/отладчик)
 - APK integrity (проверка подписи)
 - i18n (EN дефолт + RU)
+- Блокировка приложения (биометрия + системный PIN, тумблер в 'Ещё')
 
 ## SECURITY СТАТУС: hardening 3 из 4
  done: FLAG_SECURE, детектор среды, APK integrity
