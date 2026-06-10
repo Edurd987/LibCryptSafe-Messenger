@@ -64,6 +64,7 @@ dependencies {
 
     // Lifecycle (для корутин в Activity)
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.biometric:biometric:1.1.0'
 
     // SQLCipher — шифрование локальной БД
     implementation 'net.zetetic:sqlcipher-android:4.5.6'
