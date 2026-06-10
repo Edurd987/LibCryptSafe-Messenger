@@ -51,4 +51,8 @@
     <string name="integrity_fail">⚠️ App signature mismatch — possible tampering</string>
     <string name="lock_title">Unlock LibCryptSafe</string>
     <string name="lock_subtitle">Confirm your identity to access messages</string>
+    <string name="app_lock_label">App Lock</string>
+    <string name="app_lock_desc">Require biometrics or device PIN to open the app</string>
+    <string name="app_lock_no_auth_title">Lock not available</string>
+    <string name="app_lock_no_auth_msg">Set up a screen lock (PIN, pattern, or biometrics) in your device settings first.</string>
 </resources>

@@ -51,4 +51,8 @@
     <string name="integrity_fail">⚠️ Подпись приложения изменена — возможна подмена</string>
     <string name="lock_title">Разблокировка LibCryptSafe</string>
     <string name="lock_subtitle">Подтвердите личность для доступа к сообщениям</string>
+    <string name="app_lock_label">Блокировка приложения</string>
+    <string name="app_lock_desc">Требовать биометрию или PIN устройства для входа</string>
+    <string name="app_lock_no_auth_title">Блокировка недоступна</string>
+    <string name="app_lock_no_auth_msg">Сначала настройте блокировку экрана (PIN, графический ключ или биометрию) в настройках устройства.</string>
 </resources>

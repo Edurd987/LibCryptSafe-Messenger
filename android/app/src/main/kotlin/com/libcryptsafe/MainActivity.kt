@@ -255,6 +255,31 @@ class MainActivity : AppCompatActivity() {
                 window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             }
         }
+
+        // Тумблер блокировки приложения
+        val swLock = findViewById<android.widget.Switch>(R.id.switch_app_lock)
+        val prefs = getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+        swLock.isChecked = prefs.getBoolean("app_lock_enabled", false)
+        swLock.setOnCheckedChangeListener { _, checked ->
+            if (checked) {
+                // Проверяем, есть ли на устройстве биометрия/PIN
+                val bm = BiometricManager.from(this)
+                val can = bm.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
+                if (can == BiometricManager.BIOMETRIC_SUCCESS) {
+                    prefs.edit().putBoolean("app_lock_enabled", true).apply()
+                } else {
+                    // нет биометрии/PIN — нечем блокировать, откатываем
+                    swLock.isChecked = false
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.app_lock_no_auth_title))
+                        .setMessage(getString(R.string.app_lock_no_auth_msg))
+                        .setPositiveButton(getString(R.string.btn_cancel), null)
+                        .show()
+                }
+            } else {
+                prefs.edit().putBoolean("app_lock_enabled", false).apply()
+            }
+        }
     }
 
     private fun saveScreenSecurity(value: Boolean) {
