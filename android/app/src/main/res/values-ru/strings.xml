@@ -55,4 +55,10 @@
     <string name="app_lock_desc">Требовать биометрию или PIN устройства для входа</string>
     <string name="app_lock_no_auth_title">Блокировка недоступна</string>
     <string name="app_lock_no_auth_msg">Сначала настройте блокировку экрана (PIN, графический ключ или биометрию) в настройках устройства.</string>
+    <string name="wipe_title">Стереть все данные</string>
+    <string name="wipe_msg1">Все сообщения и ключи шифрования будут уничтожены безвозвратно. Это действие нельзя отменить.</string>
+    <string name="wipe_continue">Продолжить</string>
+    <string name="wipe_confirm_title">Вы абсолютно уверены?</string>
+    <string name="wipe_msg2">После этого восстановление невозможно. Ключ шифрования будет стёрт из защищённого модуля устройства.</string>
+    <string name="wipe_final">Уничтожить всё</string>
 </resources>

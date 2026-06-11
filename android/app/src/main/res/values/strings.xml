@@ -55,4 +55,10 @@
     <string name="app_lock_desc">Require biometrics or device PIN to open the app</string>
     <string name="app_lock_no_auth_title">Lock not available</string>
     <string name="app_lock_no_auth_msg">Set up a screen lock (PIN, pattern, or biometrics) in your device settings first.</string>
+    <string name="wipe_title">Erase all data</string>
+    <string name="wipe_msg1">All messages and encryption keys will be permanently destroyed. This action cannot be undone.</string>
+    <string name="wipe_continue">Continue</string>
+    <string name="wipe_confirm_title">Are you absolutely sure?</string>
+    <string name="wipe_msg2">After this, recovery is impossible. The encryption key will be erased from secure hardware.</string>
+    <string name="wipe_final">Erase everything</string>
 </resources>

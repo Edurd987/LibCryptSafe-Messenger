@@ -51,6 +51,24 @@ object KeyStoreManager {
         return cipher.doFinal(encrypted)
     }
 
+    // КРИПТОУДАЛЕНИЕ: уничтожает ключ БД и зашифрованную passphrase.
+    // После вызова существующую БД расшифровать НЕВОЗМОЖНО (ключ стёрт из TEE).
+    fun wipeKey(context: Context) {
+        // 1. удаляем ключ из AndroidKeystore (TEE)
+        try {
+            val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (ks.containsAlias(KEY_ALIAS)) {
+                ks.deleteEntry(KEY_ALIAS)
+            }
+        } catch (_: Exception) { /* ключа могло не быть */ }
+        // 2. удаляем зашифрованную passphrase + IV из prefs
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove(PREF_ENC_PASSPHRASE)
+            .remove(PREF_IV)
+            .apply()
+    }
+
     private fun getOrCreateKey(): SecretKey {
         val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (ks.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let {

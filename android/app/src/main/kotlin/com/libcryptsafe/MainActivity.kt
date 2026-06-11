@@ -94,6 +94,29 @@ class MainActivity : AppCompatActivity() {
         prompt.authenticate(promptInfo)
     }
 
+    // ПОЛНОЕ КРИПТОУДАЛЕНИЕ всех данных (необратимо!)
+    private fun wipeAllData() {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                // 1. чистим строки БД (на случай открытой БД)
+                try { db.messageDao().clearAll() } catch (_: Exception) {}
+                // 2. закрываем БД
+                try { db.close() } catch (_: Exception) {}
+                // 3. УНИЧТОЖАЕМ ключ и passphrase (крипто-shredding)
+                com.libcryptsafe.db.KeyStoreManager.wipeKey(this@MainActivity)
+                // 4. удаляем файл БД
+                try { deleteDatabase("libcryptsafe_messages.db") } catch (_: Exception) {}
+                // 5. чистим все настройки
+                try {
+                    getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+                        .edit().clear().apply()
+                } catch (_: Exception) {}
+            }
+            // 6. закрываем приложение полностью
+            finishAffinity()
+        }
+    }
+
     // Запуск приложения после разблокировки (или если блокировка выкл)
     private fun startApp() {
         loadHistory()
@@ -116,6 +139,7 @@ class MainActivity : AppCompatActivity() {
         }
         setupTabs()
         setupClearHistory()
+        setupWipeData()
         setupMore()
         checkEnvironment()
     }
@@ -166,6 +190,31 @@ class MainActivity : AppCompatActivity() {
             tabChat.setTextColor(0xFF8A93A0.toInt())
             tabNet.setBackgroundResource(R.drawable.tab_inactive)
             tabNet.setTextColor(0xFF8A93A0.toInt())
+        }
+    }
+
+    // Кнопка полного криптоудаления (двойное подтверждение, необратимо)
+    private fun setupWipeData() {
+        val trigger = findViewById<TextView>(R.id.tv_env_status)
+        trigger.setOnLongClickListener {
+            // ПЕРВОЕ подтверждение
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.wipe_title))
+                .setMessage(getString(R.string.wipe_msg1))
+                .setPositiveButton(getString(R.string.wipe_continue)) { _, _ ->
+                    // ВТОРОЕ подтверждение
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.wipe_confirm_title))
+                        .setMessage(getString(R.string.wipe_msg2))
+                        .setPositiveButton(getString(R.string.wipe_final)) { _, _ ->
+                            wipeAllData()
+                        }
+                        .setNegativeButton(getString(R.string.btn_cancel), null)
+                        .show()
+                }
+                .setNegativeButton(getString(R.string.btn_cancel), null)
+                .show()
+            true
         }
     }
 
