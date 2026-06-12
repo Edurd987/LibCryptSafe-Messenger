@@ -61,4 +61,11 @@
     <string name="wipe_confirm_title">Are you absolutely sure?</string>
     <string name="wipe_msg2">After this, recovery is impossible. The encryption key will be erased from secure hardware.</string>
     <string name="wipe_final">Erase everything</string>
+    <string name="tab_games">Games</string>
+    <string name="games_title">GAME BOARD</string>
+    <string name="game_chess">Chess</string>
+    <string name="game_backgammon">Backgammon</string>
+    <string name="game_go">Go</string>
+    <string name="game_soon">Coming soon</string>
+    <string name="game_dev">This game is in development</string>
 </resources>

@@ -141,6 +141,7 @@ class MainActivity : AppCompatActivity() {
         setupClearHistory()
         setupWipeData()
         setupMore()
+        setupGames()
         checkEnvironment()
     }
 
@@ -152,6 +153,8 @@ class MainActivity : AppCompatActivity() {
         val inputBar  = findViewById<LinearLayout>(R.id.container_input)
         val tabMore   = findViewById<TextView>(R.id.tab_more)
         val moreView  = findViewById<LinearLayout>(R.id.container_more)
+        val tabGames  = findViewById<TextView>(R.id.tab_games)
+        val gamesView = findViewById<android.widget.ScrollView>(R.id.container_games)
 
         tabChat.setOnClickListener {
             chatView.visibility = android.view.View.VISIBLE
@@ -164,6 +167,9 @@ class MainActivity : AppCompatActivity() {
             moreView.visibility = android.view.View.GONE
             tabMore.setBackgroundResource(R.drawable.tab_inactive)
             tabMore.setTextColor(0xFF8A93A0.toInt())
+            gamesView.visibility = android.view.View.GONE
+            tabGames.setBackgroundResource(R.drawable.tab_inactive)
+            tabGames.setTextColor(0xFF8A93A0.toInt())
         }
 
         tabNet.setOnClickListener {
@@ -177,6 +183,9 @@ class MainActivity : AppCompatActivity() {
             moreView.visibility = android.view.View.GONE
             tabMore.setBackgroundResource(R.drawable.tab_inactive)
             tabMore.setTextColor(0xFF8A93A0.toInt())
+            gamesView.visibility = android.view.View.GONE
+            tabGames.setBackgroundResource(R.drawable.tab_inactive)
+            tabGames.setTextColor(0xFF8A93A0.toInt())
             updateNetworkPanel()
         }
         tabMore.setOnClickListener {
@@ -190,7 +199,34 @@ class MainActivity : AppCompatActivity() {
             tabChat.setTextColor(0xFF8A93A0.toInt())
             tabNet.setBackgroundResource(R.drawable.tab_inactive)
             tabNet.setTextColor(0xFF8A93A0.toInt())
+            gamesView.visibility = android.view.View.GONE
+            tabGames.setBackgroundResource(R.drawable.tab_inactive)
+            tabGames.setTextColor(0xFF8A93A0.toInt())
         }
+
+        tabGames.setOnClickListener {
+            chatView.visibility = android.view.View.GONE
+            netView.visibility  = android.view.View.GONE
+            moreView.visibility = android.view.View.GONE
+            inputBar.visibility = android.view.View.GONE
+            gamesView.visibility = android.view.View.VISIBLE
+            tabGames.setBackgroundResource(R.drawable.tab_active)
+            tabGames.setTextColor(0xFF7CFFB0.toInt())
+            tabChat.setBackgroundResource(R.drawable.tab_inactive)
+            tabChat.setTextColor(0xFF8A93A0.toInt())
+            tabNet.setBackgroundResource(R.drawable.tab_inactive)
+            tabNet.setTextColor(0xFF8A93A0.toInt())
+            tabMore.setBackgroundResource(R.drawable.tab_inactive)
+            tabMore.setTextColor(0xFF8A93A0.toInt())
+        }
+    }
+
+    // Карточки игр (пока заглушки — игры в разработке)
+    private fun setupGames() {
+        val toast = { android.widget.Toast.makeText(this, getString(R.string.game_dev), android.widget.Toast.LENGTH_SHORT).show() }
+        findViewById<LinearLayout>(R.id.card_chess).setOnClickListener { toast() }
+        findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener { toast() }
+        findViewById<LinearLayout>(R.id.card_go).setOnClickListener { toast() }
     }
 
     // Кнопка полного криптоудаления (двойное подтверждение, необратимо)

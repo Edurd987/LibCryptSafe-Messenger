@@ -69,6 +69,18 @@
             android:textColor="#8A93A0"
             android:textSize="13sp"
             android:background="@drawable/tab_inactive"/>
+        <TextView
+            android:id="@+id/tab_games"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/tab_games"
+            android:gravity="center"
+            android:padding="9dp"
+            android:layout_marginStart="8dp"
+            android:textColor="#8A93A0"
+            android:textSize="13sp"
+            android:background="@drawable/tab_inactive"/>
     </LinearLayout>
 
     <ScrollView
@@ -291,6 +303,72 @@
                 android:paddingTop="12dp"/>
         </LinearLayout>
     </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/container_games"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/games_title"
+                android:textColor="#7CFFB0"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:paddingBottom="12dp"/>
+            <LinearLayout
+                android:id="@+id/card_chess"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/glass_card"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="&#9823;" android:textSize="28sp" android:layout_marginEnd="16dp"/>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_chess" android:textColor="#FFFFFF" android:textSize="16sp"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_soon" android:textColor="#8A93A0" android:textSize="12sp" android:paddingTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout
+                android:id="@+id/card_backgammon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/glass_card"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="&#127922;" android:textSize="28sp" android:layout_marginEnd="16dp"/>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_backgammon" android:textColor="#FFFFFF" android:textSize="16sp"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_soon" android:textColor="#8A93A0" android:textSize="12sp" android:paddingTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout
+                android:id="@+id/card_go"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/glass_card"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="&#9899;" android:textSize="28sp" android:layout_marginEnd="16dp"/>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_go" android:textColor="#FFFFFF" android:textSize="16sp"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_soon" android:textColor="#8A93A0" android:textSize="12sp" android:paddingTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
 
     <LinearLayout
         android:id="@+id/container_input"

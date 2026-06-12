@@ -61,4 +61,11 @@
     <string name="wipe_confirm_title">Вы абсолютно уверены?</string>
     <string name="wipe_msg2">После этого восстановление невозможно. Ключ шифрования будет стёрт из защищённого модуля устройства.</string>
     <string name="wipe_final">Уничтожить всё</string>
+    <string name="tab_games">Игры</string>
+    <string name="games_title">ИГРОВОЕ ПОЛЕ</string>
+    <string name="game_chess">Шахматы</string>
+    <string name="game_backgammon">Нарды</string>
+    <string name="game_go">Го</string>
+    <string name="game_soon">Скоро</string>
+    <string name="game_dev">Игра в разработке</string>
 </resources>
