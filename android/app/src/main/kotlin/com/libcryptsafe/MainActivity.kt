@@ -45,7 +45,7 @@ class MainActivity : AppCompatActivity() {
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
-    private val SERVER_URL = "ws://192.168.1.100:8080"
+    private val SERVER_URL = "ws://192.168.1.126:8080"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -438,14 +438,16 @@ class MainActivity : AppCompatActivity() {
 
             override fun onMessage(ws: WebSocket, bytes: ByteString) {
                 if (!handshakeDone) return
+                // Безопасность: лимит размера входящего (защита от DoS)
+                if (bytes.size > 64 * 1024) return
                 val decrypted = CryptoManager.decrypt(bytes.toByteArray())
                 runOnUiThread {
-                    if (decrypted != null) {
-                        val text = String(decrypted, Charsets.UTF_8)
-                        addMessage(text, isOwn = false, persist = true)
-                    } else {
+                    if (decrypted == null) {
                         addMessage(getString(R.string.decrypt_error), isOwn = false)
+                        return@runOnUiThread
                     }
+                    val raw = String(decrypted, Charsets.UTF_8)
+                    handleIncoming(raw)
                 }
             }
 
@@ -469,9 +471,64 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    // Разбор входящего сообщения: явный маркер type, без угадывания.
+    // Совместимость: не-JSON или без "v" => старый чистый CHAT.
+    private fun handleIncoming(raw: String) {
+        val json = try {
+            org.json.JSONObject(raw)
+        } catch (e: Exception) {
+            // не JSON => старый формат, чистый текст чата
+            addMessage(raw, isOwn = false, persist = true)
+            return
+        }
+        // нет версии => старый формат (на всякий случай)
+        if (!json.has("v")) {
+            addMessage(raw, isOwn = false, persist = true)
+            return
+        }
+        // Безопасность: whitelist известных типов
+        when (json.optString("type")) {
+            "CHAT" -> {
+                val text = json.optString("text", "")
+                addMessage(text, isOwn = false, persist = true)
+            }
+            "GAME_MOVE", "GAME_CHAT" -> {
+                // Движка игр пока нет — заглушка. Валидируем gameId.
+                val gameId = json.optString("gameId", "")
+                if (gameId.isEmpty() || gameId.length > 64) return
+                val payload = json.optString("payload", "")
+                android.util.Log.i("GAME_PROTO", "Game event: ${json.optString("type")} game=$gameId len=${payload.length}")
+                // TODO: направить в движок игры когда он появится
+            }
+            else -> {
+                // неизвестный тип => игнор (не падаем, не доверяем сети)
+            }
+        }
+    }
+
     private fun sendMessage(text: String) {
         addMessage(text, isOwn = true, persist = true)
-        val encrypted = CryptoManager.encrypt(text.toByteArray(Charsets.UTF_8))
+        // Оборачиваем в протокол-обёртку с явным типом (v1)
+        val wrapper = JSONObject().apply {
+            put("v", 1)
+            put("type", "CHAT")
+            put("text", text)
+        }.toString()
+        val encrypted = CryptoManager.encrypt(wrapper.toByteArray(Charsets.UTF_8))
+        if (encrypted != null) {
+            webSocket?.send(encrypted.toByteString())
+        }
+    }
+
+    // Отправка игрового события (ход/игровой чат) в той же E2EE-обёртке
+    private fun sendGameEvent(type: String, gameId: String, payload: String) {
+        val wrapper = JSONObject().apply {
+            put("v", 1)
+            put("type", type)        // GAME_MOVE / GAME_CHAT
+            put("gameId", gameId)
+            put("payload", payload)
+        }.toString()
+        val encrypted = CryptoManager.encrypt(wrapper.toByteArray(Charsets.UTF_8))
         if (encrypted != null) {
             webSocket?.send(encrypted.toByteString())
         }
