@@ -225,7 +225,9 @@ class MainActivity : AppCompatActivity() {
     private fun setupGames() {
         val toast = { android.widget.Toast.makeText(this, getString(R.string.game_dev), android.widget.Toast.LENGTH_SHORT).show() }
         findViewById<LinearLayout>(R.id.card_chess).setOnClickListener { toast() }
-        findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener { toast() }
+        findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener {
+            startActivity(android.content.Intent(this, GameActivity::class.java))
+        }
         findViewById<LinearLayout>(R.id.card_go).setOnClickListener { toast() }
     }
 

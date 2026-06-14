@@ -68,4 +68,5 @@
     <string name="game_go">Го</string>
     <string name="game_soon">Скоро</string>
     <string name="game_dev">Игра в разработке</string>
+    <string name="game_exit">Выйти из партии</string>
 </resources>

@@ -56,7 +56,9 @@ class NardiBoardView @JvmOverloads constructor(
         val barLeft = (w - barWidth) / 2f
         canvas.drawRect(barLeft, 0f, barLeft + barWidth, h, barPaint)
 
-        // 3. Рамка вокруг доски
-        canvas.drawRect(2f, 2f, w - 2f, h - 2f, framePaint)
+        // 3. Рамка вокруг доски (отступ = половина толщины кисти,
+        //    чтобы STROKE не обрезался краем View — фикс артефакта)
+        val off = framePaint.strokeWidth / 2f
+        canvas.drawRect(off, off, w - off, h - off, framePaint)
     }
 }
