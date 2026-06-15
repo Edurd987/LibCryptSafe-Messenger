@@ -54,7 +54,7 @@ class NardiBoardView @JvmOverloads constructor(
         pointWidth = (w - barWidth) / 12f
         // высота треугольника пропорциональна его ШИРИНЕ (стабильная
         // форма на любом экране, не зависит от соотношения сторон)
-        pointHeight = pointWidth * 2.5f
+        pointHeight = pointWidth * 5.0f
     }
 
     override fun onDraw(canvas: Canvas) {
