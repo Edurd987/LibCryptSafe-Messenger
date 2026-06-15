@@ -36,12 +36,25 @@ class NardiBoardView @JvmOverloads constructor(
         color = Color.parseColor("#13231A")  // бар чуть светлее фона
         style = Paint.Style.FILL
     }
+    // Две кисти для чередования треугольников (тёмные тона)
+    private val pointPaintA = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#1B3326")  // приглушённый зелёный
+        style = Paint.Style.FILL
+    }
+    private val pointPaintB = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#142A1E")  // темнее
+        style = Paint.Style.FILL
+    }
+    // Переиспользуемый Path (не создаём объект в onDraw — бережём GC)
+    private val pointPath = android.graphics.Path()
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         barWidth = w * 0.06f
         pointWidth = (w - barWidth) / 12f
-        pointHeight = h * 0.38f
+        // высота треугольника пропорциональна его ШИРИНЕ (стабильная
+        // форма на любом экране, не зависит от соотношения сторон)
+        pointHeight = pointWidth * 2.5f
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -60,5 +73,35 @@ class NardiBoardView @JvmOverloads constructor(
         //    чтобы STROKE не обрезался краем View — фикс артефакта)
         val off = framePaint.strokeWidth / 2f
         canvas.drawRect(off, off, w - off, h - off, framePaint)
+
+        // 4. 24 треугольника-пункта (ЭТАП 1б-2)
+        for (i in 0 until 24) {
+            // визуальный столбец 0..11 слева направо
+            val visualCol = if (i < 12) i else 23 - i
+            // левая граница столбца с учётом центрального бара
+            val startX = if (visualCol < 6)
+                visualCol * pointWidth
+            else
+                visualCol * pointWidth + barWidth
+            val centerX = startX + pointWidth / 2f
+            val endX = startX + pointWidth
+            // чередование цвета по столбцу
+            val paint = if (visualCol % 2 == 0) pointPaintA else pointPaintB
+
+            pointPath.reset()
+            if (i < 12) {
+                // нижний ряд: основание внизу (y=h), вершина вверх
+                pointPath.moveTo(startX, h)
+                pointPath.lineTo(endX, h)
+                pointPath.lineTo(centerX, h - pointHeight)
+            } else {
+                // верхний ряд: основание вверху (y=0), вершина вниз
+                pointPath.moveTo(startX, 0f)
+                pointPath.lineTo(endX, 0f)
+                pointPath.lineTo(centerX, pointHeight)
+            }
+            pointPath.close()
+            canvas.drawPath(pointPath, paint)
+        }
     }
 }
