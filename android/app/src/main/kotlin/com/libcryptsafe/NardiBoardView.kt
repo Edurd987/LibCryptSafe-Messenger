@@ -24,6 +24,9 @@ class NardiBoardView @JvmOverloads constructor(
     private var pointHeight = 0f
     private var checkerRadius = 0f
 
+    // Выбранный пункт (тап). null = ничего не выбрано. Пока только подсветка.
+    private var selectedPoint: Int? = null
+
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#0A1410"); style = Paint.Style.FILL
     }
@@ -48,6 +51,10 @@ class NardiBoardView @JvmOverloads constructor(
     }
     private val checkerStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#7CFFB0"); style = Paint.Style.STROKE; strokeWidth = 2f
+    }
+    // Подсветка выбранного пункта: яркий неоновый контур
+    private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#B6FFD9"); style = Paint.Style.STROKE; strokeWidth = 5f
     }
     private val checkerTextDark = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#13231A"); textAlign = Paint.Align.CENTER
@@ -74,6 +81,38 @@ class NardiBoardView @JvmOverloads constructor(
         val startX = if (visualCol < 6) visualCol * pointWidth
                      else visualCol * pointWidth + barWidth
         return startX + pointWidth / 2f
+    }
+
+    // Обратная функция к отрисовке: экран (x,y) -> индекс пункта 0..23, или null.
+    private fun pointAt(x: Float, y: Float): Int? {
+        val w = width.toFloat(); val h = height.toFloat()
+        if (x < 0f || x > w || y < 0f || y > h) return null   // мимо доски
+
+        // ряд по половине высоты: верх = 12..23, низ = 0..11
+        val topRow = y < h / 2f
+
+        // visualCol симметрично формуле startX из onDraw (без barLeft!)
+        val leftBlockEnd = 6f * pointWidth          // конец левых 6 пунктов
+        val barRight = leftBlockEnd + barWidth
+        // visualCol сразу 0..11: правая ветка ((x-barWidth)/pointWidth) даёт 6..11
+        val visualCol: Int = when {
+            x < leftBlockEnd -> (x / pointWidth).toInt()
+            x < barRight     -> return null         // тап по центральному бару
+            else             -> ((x - barWidth) / pointWidth).toInt()
+        }
+        val col = visualCol.coerceIn(0, 11)
+        return if (topRow) 23 - col else col
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+            val p = pointAt(event.x, event.y)
+            android.util.Log.d("NardiTouch", "tap -> point=$p (x=${event.x}, y=${event.y})")
+            selectedPoint = p
+            invalidate()
+            return true
+        }
+        return super.onTouchEvent(event)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -107,6 +146,25 @@ class NardiBoardView @JvmOverloads constructor(
             }
             pointPath.close()
             canvas.drawPath(pointPath, paint)
+        }
+
+        // Подсветка выбранного пункта (тап) — неоновый контур треугольника
+        selectedPoint?.let { sp ->
+            val visualCol = if (sp < 12) sp else 23 - sp
+            val startX = if (visualCol < 6) visualCol * pointWidth
+                         else visualCol * pointWidth + barWidth
+            val centerX = pointCenterX(sp)
+            val endX = startX + pointWidth
+            pointPath.reset()
+            if (sp < 12) {
+                pointPath.moveTo(startX, h); pointPath.lineTo(endX, h)
+                pointPath.lineTo(centerX, h - pointHeight)
+            } else {
+                pointPath.moveTo(startX, 0f); pointPath.lineTo(endX, 0f)
+                pointPath.lineTo(centerX, pointHeight)
+            }
+            pointPath.close()
+            canvas.drawPath(pointPath, highlightPaint)
         }
 
         // Шашки из модели (1в-1): до 5 в стопке + число на верхней
