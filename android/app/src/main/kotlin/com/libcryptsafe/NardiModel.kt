@@ -32,3 +32,35 @@ fun initLongNardi(): NardiGameState {
         turn = PlayerType.WHITE  // белые ходят первыми
     )
 }
+
+
+// ===== ХОД (ЭТАП Б, кирпич 1): "тупое" перемещение шашки =====
+// Чистая функция: состояние + (откуда, куда) -> НОВОЕ состояние.
+// БЕЗ правил игры (дистанция, занятость соперником, зары) — только механика.
+// Не зависит от View: эта же функция применит ход соперника из сети (GAME_MOVE).
+fun applyMove(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameState {
+    // Защита от мусорного ввода — возвращаем состояние без изменений
+    if (fromIndex !in 0..23 || toIndex !in 0..23) return state
+    if (fromIndex == toIndex) return state
+
+    val from = state.board[fromIndex]
+    if (from.count <= 0 || from.player == PlayerType.NONE) return state  // ход из пустого
+
+    val mover = from.player  // цвет берём от двигаемой шашки, не от turn (turn позже)
+    val to = state.board[toIndex]
+
+    val newBoard = state.board.toMutableList()
+
+    // 1. Снять одну шашку с fromIndex
+    val newFromCount = from.count - 1
+    newBoard[fromIndex] = if (newFromCount == 0)
+        PointState(0, PlayerType.NONE)          // пункт опустел -> владельца сбрасываем
+    else
+        PointState(newFromCount, mover)
+
+    // 2. Добавить одну шашку на toIndex (владелец = тот, кто ходил)
+    newBoard[toIndex] = PointState(to.count + 1, mover)
+
+    // dice и turn пока не трогаем — это кирпичи следующих этапов
+    return state.copy(board = newBoard)
+}
