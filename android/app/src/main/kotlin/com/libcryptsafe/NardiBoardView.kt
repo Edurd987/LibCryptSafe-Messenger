@@ -94,7 +94,7 @@ class NardiBoardView @JvmOverloads constructor(
             val visualCol = if (i < 12) i else 23 - i
             val startX = if (visualCol < 6) visualCol * pointWidth
                          else visualCol * pointWidth + barWidth
-            val centerX = startX + pointWidth / 2f
+            val centerX = pointCenterX(i)
             val endX = startX + pointWidth
             val paint = if (visualCol % 2 == 0) pointPaintA else pointPaintB
             pointPath.reset()
