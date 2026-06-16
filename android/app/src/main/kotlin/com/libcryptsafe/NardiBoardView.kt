@@ -106,9 +106,24 @@ class NardiBoardView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
-            val p = pointAt(event.x, event.y)
-            android.util.Log.d("NardiTouch", "tap -> point=$p (x=${event.x}, y=${event.y})")
-            selectedPoint = p
+            val clicked = pointAt(event.x, event.y)
+            android.util.Log.d("NardiTouch", "tap -> point=$clicked, selected=$selectedPoint")
+            val from = selectedPoint
+            when {
+                // А: мимо доски или по бару -> сброс выбора
+                clicked == null -> selectedPoint = null
+                // Б: первый этап (ничего не выбрано) -> выбрать, только если есть шашки
+                from == null -> {
+                    if (state.board[clicked].count > 0) selectedPoint = clicked
+                    // пустой пункт на первом этапе -> игнор
+                }
+                // В: второй этап (старт уже выбран)
+                clicked == from -> selectedPoint = null         // тот же пункт -> отмена
+                else -> {                                       // иначе -> ход
+                    state = applyMove(state, from, clicked)
+                    selectedPoint = null
+                }
+            }
             invalidate()
             return true
         }
