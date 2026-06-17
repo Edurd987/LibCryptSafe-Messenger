@@ -69,4 +69,8 @@
     <string name="game_soon">Coming soon</string>
     <string name="game_dev">This game is in development</string>
     <string name="game_exit">Exit game</string>
+    <string name="my_id_title">Your ID</string>
+    <string name="my_id_desc">Share this ID so others can add you. It never leaves your device unless you share it.</string>
+    <string name="my_id_copy">Copy</string>
+    <string name="my_id_copied">ID copied</string>
 </resources>

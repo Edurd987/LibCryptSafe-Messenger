@@ -193,6 +193,44 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@drawable/glass_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/my_id_title"
+                android:textColor="#EAF1EC"
+                android:textSize="15sp"/>
+            <TextView
+                android:id="@+id/tv_my_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textColor="#7CFFB0"
+                android:textSize="18sp"
+                android:fontFamily="monospace"
+                android:textStyle="bold"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/my_id_desc"
+                android:textColor="#8A93A0"
+                android:textSize="12sp"
+                android:paddingBottom="10dp"/>
+            <Button
+                android:id="@+id/btn_copy_id"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/my_id_copy"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/glass_card"
             android:padding="16dp">
 
             <LinearLayout

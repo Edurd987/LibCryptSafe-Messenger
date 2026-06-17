@@ -69,4 +69,8 @@
     <string name="game_soon">Скоро</string>
     <string name="game_dev">Игра в разработке</string>
     <string name="game_exit">Выйти из партии</string>
+    <string name="my_id_title">Ваш ID</string>
+    <string name="my_id_desc">Покажите этот ID, чтобы вас могли добавить. Он не покидает устройство, пока вы сами его не передадите.</string>
+    <string name="my_id_copy">Копировать</string>
+    <string name="my_id_copied">ID скопирован</string>
 </resources>

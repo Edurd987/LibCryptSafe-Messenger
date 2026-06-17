@@ -1,6 +1,7 @@
 package com.libcryptsafe
 
 import androidx.appcompat.app.AppCompatActivity
+import android.content.Context
 import android.os.Bundle
 import android.util.Base64
 import android.view.Gravity
@@ -123,6 +124,13 @@ class MainActivity : AppCompatActivity() {
         // Стабильный ID клиента (постоянный, переживает перезапуски) — пока в лог
         val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)
         android.util.Log.d("CRYPT_SAFE", "My Stable ID: $stableId")
+        // Карточка ID в хабе 'Ещё': показать + копировать
+        findViewById<TextView>(R.id.tv_my_id).text = stableId
+        findViewById<Button>(R.id.btn_copy_id).setOnClickListener {
+            val clip = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clip.setPrimaryClip(android.content.ClipData.newPlainText("LibCryptSafe ID", stableId))
+            android.widget.Toast.makeText(this, getString(R.string.my_id_copied), android.widget.Toast.LENGTH_SHORT).show()
+        }
         myPubKey = CryptoManager.generateKeypair()
         if (myPubKey != null) {
             val fp = CryptoManager.getFingerprint()
