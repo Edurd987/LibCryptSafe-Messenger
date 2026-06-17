@@ -6,9 +6,10 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
-@Database(entities = [MessageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [MessageEntity::class, ContactEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
+    abstract fun contactDao(): ContactDao
 
     companion object {
         @Volatile
@@ -35,7 +36,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     DB_NAME
-                ).openHelperFactory(factory).build()
+                ).openHelperFactory(factory)
+                      .fallbackToDestructiveMigration()  // dev: смена версии пересоздаёт БД
+                      .build()
                 INSTANCE = instance
                 instance
             }
