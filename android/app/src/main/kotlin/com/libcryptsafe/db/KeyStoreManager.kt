@@ -5,6 +5,9 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
+import java.security.KeyPairGenerator
+import java.security.MessageDigest
+import android.security.keystore.KeyProperties as KP
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -14,6 +17,7 @@ object KeyStoreManager {
 
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     private const val KEY_ALIAS = "libcryptsafe_db_key"
+    private const val IDENTITY_ALIAS = "libcryptsafe_identity_key"  // постоянный ID (НЕ для подписи пока)
     private const val PREFS = "libcryptsafe_secure_prefs"
     private const val PREF_ENC_PASSPHRASE = "enc_passphrase"
     private const val PREF_IV = "passphrase_iv"
@@ -85,5 +89,27 @@ object KeyStoreManager {
                 .setKeySize(256)
                 .build())
         return keyGen.generateKey()
+    }
+
+    // Стабильный ID клиента: SHA-256 от публичного EC-ключа из AndroidKeyStore.
+    // Ключ создаётся один раз и переживает перезапуски -> ID постоянный.
+    // Назначение: идентификация/контакты. Подпись эфемерных ключей — отдельный заход.
+    fun getOrCreateStableId(context: Context): String {
+        val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val pub = if (ks.containsAlias(IDENTITY_ALIAS)) {
+            ks.getCertificate(IDENTITY_ALIAS).publicKey
+        } else {
+            val kpg = KeyPairGenerator.getInstance(KP.KEY_ALGORITHM_EC, ANDROID_KEYSTORE)
+            kpg.initialize(
+                KeyGenParameterSpec.Builder(IDENTITY_ALIAS, KP.PURPOSE_SIGN or KP.PURPOSE_VERIFY)
+                    .setDigests(KP.DIGEST_SHA256)
+                    .build()
+            )
+            kpg.generateKeyPair().public
+        }
+        val hash = MessageDigest.getInstance("SHA-256").digest(pub.encoded)
+        // первые 8 байт -> 16 hex, группами по 4: A1B2-C3D4-E5F6-7890
+        val hex = hash.take(8).joinToString("") { "%02X".format(it) }
+        return hex.chunked(4).joinToString("-")
     }
 }

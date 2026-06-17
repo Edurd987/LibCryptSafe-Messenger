@@ -120,6 +120,9 @@ class MainActivity : AppCompatActivity() {
     // Запуск приложения после разблокировки (или если блокировка выкл)
     private fun startApp() {
         loadHistory()
+        // Стабильный ID клиента (постоянный, переживает перезапуски) — пока в лог
+        val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)
+        android.util.Log.d("CRYPT_SAFE", "My Stable ID: $stableId")
         myPubKey = CryptoManager.generateKeypair()
         if (myPubKey != null) {
             val fp = CryptoManager.getFingerprint()
