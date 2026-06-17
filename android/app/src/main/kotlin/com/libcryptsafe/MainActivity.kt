@@ -167,69 +167,26 @@ class MainActivity : AppCompatActivity() {
         val tabGames  = findViewById<TextView>(R.id.tab_games)
         val gamesView = findViewById<android.widget.ScrollView>(R.id.container_games)
 
-        tabChat.setOnClickListener {
-            chatView.visibility = android.view.View.VISIBLE
-            netView.visibility  = android.view.View.GONE
-            inputBar.visibility = android.view.View.VISIBLE
-            tabChat.setBackgroundResource(R.drawable.tab_active)
-            tabChat.setTextColor(0xFF7CFFB0.toInt())
-            tabNet.setBackgroundResource(R.drawable.tab_inactive)
-            tabNet.setTextColor(0xFF8A93A0.toInt())
-            moreView.visibility = android.view.View.GONE
-            tabMore.setBackgroundResource(R.drawable.tab_inactive)
-            tabMore.setTextColor(0xFF8A93A0.toInt())
-            gamesView.visibility = android.view.View.GONE
-            tabGames.setBackgroundResource(R.drawable.tab_inactive)
-            tabGames.setTextColor(0xFF8A93A0.toInt())
+// Единый переключатель вкладок: показывает один контейнер, гасит остальные.
+        // active — id активного таба. inputBar виден только на чате.
+        val tabs = listOf(tabChat, tabNet, tabMore, tabGames)
+        fun selectTab(active: TextView) {
+            chatView.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
+            netView.visibility   = if (active == tabNet)   android.view.View.VISIBLE else android.view.View.GONE
+            moreView.visibility  = if (active == tabMore)  android.view.View.VISIBLE else android.view.View.GONE
+            gamesView.visibility = if (active == tabGames) android.view.View.VISIBLE else android.view.View.GONE
+            inputBar.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
+            for (t in tabs) {
+                val on = t == active
+                t.setBackgroundResource(if (on) R.drawable.tab_active else R.drawable.tab_inactive)
+                t.setTextColor(if (on) 0xFF7CFFB0.toInt() else 0xFF8A93A0.toInt())
+            }
         }
 
-        tabNet.setOnClickListener {
-            chatView.visibility = android.view.View.GONE
-            netView.visibility  = android.view.View.VISIBLE
-            inputBar.visibility = android.view.View.GONE
-            tabNet.setBackgroundResource(R.drawable.tab_active)
-            tabNet.setTextColor(0xFF7CFFB0.toInt())
-            tabChat.setBackgroundResource(R.drawable.tab_inactive)
-            tabChat.setTextColor(0xFF8A93A0.toInt())
-            moreView.visibility = android.view.View.GONE
-            tabMore.setBackgroundResource(R.drawable.tab_inactive)
-            tabMore.setTextColor(0xFF8A93A0.toInt())
-            gamesView.visibility = android.view.View.GONE
-            tabGames.setBackgroundResource(R.drawable.tab_inactive)
-            tabGames.setTextColor(0xFF8A93A0.toInt())
-            updateNetworkPanel()
-        }
-        tabMore.setOnClickListener {
-            chatView.visibility = android.view.View.GONE
-            netView.visibility  = android.view.View.GONE
-            moreView.visibility = android.view.View.VISIBLE
-            inputBar.visibility = android.view.View.GONE
-            tabMore.setBackgroundResource(R.drawable.tab_active)
-            tabMore.setTextColor(0xFF7CFFB0.toInt())
-            tabChat.setBackgroundResource(R.drawable.tab_inactive)
-            tabChat.setTextColor(0xFF8A93A0.toInt())
-            tabNet.setBackgroundResource(R.drawable.tab_inactive)
-            tabNet.setTextColor(0xFF8A93A0.toInt())
-            gamesView.visibility = android.view.View.GONE
-            tabGames.setBackgroundResource(R.drawable.tab_inactive)
-            tabGames.setTextColor(0xFF8A93A0.toInt())
-        }
-
-        tabGames.setOnClickListener {
-            chatView.visibility = android.view.View.GONE
-            netView.visibility  = android.view.View.GONE
-            moreView.visibility = android.view.View.GONE
-            inputBar.visibility = android.view.View.GONE
-            gamesView.visibility = android.view.View.VISIBLE
-            tabGames.setBackgroundResource(R.drawable.tab_active)
-            tabGames.setTextColor(0xFF7CFFB0.toInt())
-            tabChat.setBackgroundResource(R.drawable.tab_inactive)
-            tabChat.setTextColor(0xFF8A93A0.toInt())
-            tabNet.setBackgroundResource(R.drawable.tab_inactive)
-            tabNet.setTextColor(0xFF8A93A0.toInt())
-            tabMore.setBackgroundResource(R.drawable.tab_inactive)
-            tabMore.setTextColor(0xFF8A93A0.toInt())
-        }
+        tabChat.setOnClickListener  { selectTab(tabChat) }
+        tabNet.setOnClickListener   { selectTab(tabNet); updateNetworkPanel() }
+        tabMore.setOnClickListener  { selectTab(tabMore) }
+        tabGames.setOnClickListener { selectTab(tabGames) }
     }
 
     // Карточки игр (пока заглушки — игры в разработке)
