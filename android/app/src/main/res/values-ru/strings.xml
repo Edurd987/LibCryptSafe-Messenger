@@ -75,4 +75,14 @@
     <string name="my_id_copied">ID скопирован</string>
     <string name="tab_contacts">Контакты</string>
     <string name="contacts_empty">Контактов пока нет</string>
+    <string name="contacts_add">Добавить контакт</string>
+    <string name="contact_name_hint">Имя</string>
+    <string name="contact_id_hint">ID (XXXX-XXXX-XXXX-XXXX)</string>
+    <string name="contact_save">Сохранить</string>
+    <string name="contact_cancel">Отмена</string>
+    <string name="contact_err_name">Введите имя</string>
+    <string name="contact_err_id">Неверный ID (нужно 16 hex-символов)</string>
+    <string name="contact_err_dup">Этот ID уже в контактах</string>
+    <string name="contact_err_self">Нельзя добавить свой собственный ID</string>
+    <string name="contact_added">Контакт добавлен</string>
 </resources>

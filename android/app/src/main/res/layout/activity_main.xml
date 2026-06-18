@@ -456,6 +456,17 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
+            <Button
+                android:id="@+id/btn_add_contact"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/contacts_add"
+                android:layout_marginBottom="12dp"/>
+            <LinearLayout
+                android:id="@+id/list_contacts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"/>
             <TextView
                 android:id="@+id/tv_contacts_empty"
                 android:layout_width="wrap_content"

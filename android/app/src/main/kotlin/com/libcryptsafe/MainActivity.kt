@@ -153,6 +153,7 @@ class MainActivity : AppCompatActivity() {
         setupWipeData()
         setupMore()
         setupGames()
+        setupContacts()
         checkEnvironment()
     }
 
@@ -190,10 +191,108 @@ class MainActivity : AppCompatActivity() {
         tabNet.setOnClickListener   { selectTab(tabNet); updateNetworkPanel() }
         tabMore.setOnClickListener  { selectTab(tabMore) }
         tabGames.setOnClickListener { selectTab(tabGames) }
-        tabContacts.setOnClickListener { selectTab(tabContacts) }
+        tabContacts.setOnClickListener { selectTab(tabContacts); refreshContacts() }
     }
 
     // Карточки игр (пока заглушки — игры в разработке)
+    // Контакты: добавление через диалог (имя + ID), валидация, запись в БД
+    private fun setupContacts() {
+        findViewById<Button>(R.id.btn_add_contact).setOnClickListener {
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad, pad / 2, pad, 0)
+            }
+            val inName = android.widget.EditText(this).apply {
+                hint = getString(R.string.contact_name_hint)
+                isSingleLine = true
+            }
+            val inId = android.widget.EditText(this).apply {
+                hint = getString(R.string.contact_id_hint)
+                isSingleLine = true
+            }
+            box.addView(inName); box.addView(inId)
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.contacts_add))
+                .setView(box)
+                .setPositiveButton(getString(R.string.contact_save), null)  // override ниже
+                .setNegativeButton(getString(R.string.contact_cancel), null)
+                .create()
+                .apply {
+                    setOnShowListener {
+                        getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                            val name = inName.text.toString().trim()
+                            // канонизация ID: только hex, верхний регистр, ровно 16
+                            val raw = inId.text.toString().uppercase().filter { it in "0123456789ABCDEF" }
+                            when {
+                                name.isEmpty() ->
+                                    toast(getString(R.string.contact_err_name))
+                                raw.length != 16 ->
+                                    toast(getString(R.string.contact_err_id))
+                                else -> {
+                                    val canon = raw.chunked(4).joinToString("-")
+                                    val myId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this@MainActivity)
+                                    if (canon == myId) { toast(getString(R.string.contact_err_self)); return@setOnClickListener }
+                                    lifecycleScope.launch {
+                                        val dup = withContext(Dispatchers.IO) { db.contactDao().countById(canon) }
+                                        if (dup > 0) { toast(getString(R.string.contact_err_dup)); return@launch }
+                                        withContext(Dispatchers.IO) {
+                                            db.contactDao().insert(com.libcryptsafe.db.ContactEntity(name = name, contactId = canon))
+                                        }
+                                        toast(getString(R.string.contact_added))
+                                        refreshContacts()
+                                        dismiss()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .show()
+        }
+    }
+
+    // Перерисовка списка контактов из БД (разовый запрос, как loadHistory)
+    private fun refreshContacts() {
+        val list = findViewById<LinearLayout>(R.id.list_contacts)
+        val empty = findViewById<TextView>(R.id.tv_contacts_empty)
+        lifecycleScope.launch {
+            val items = withContext(Dispatchers.IO) { db.contactDao().getAllOnce() }
+            list.removeAllViews()
+            empty.visibility = if (items.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
+            val pad = (12 * resources.displayMetrics.density).toInt()
+            for (c in items) {
+                val row = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(pad, pad, pad, pad)
+                    setBackgroundResource(R.drawable.glass_card)
+                }
+                val nameView = TextView(this@MainActivity).apply {
+                    text = c.name
+                    setTextColor(0xFFEAF1EC.toInt())
+                    textSize = 15f
+                }
+                val idView = TextView(this@MainActivity).apply {
+                    text = c.contactId
+                    setTextColor(0xFF7CFFB0.toInt())
+                    textSize = 13f
+                    typeface = android.graphics.Typeface.MONOSPACE
+                }
+                row.addView(nameView); row.addView(idView)
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = (8 * resources.displayMetrics.density).toInt() }
+                row.layoutParams = lp
+                list.addView(row)
+            }
+        }
+    }
+
+    private fun toast(msg: String) =
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+
     private fun setupGames() {
         val toast = { android.widget.Toast.makeText(this, getString(R.string.game_dev), android.widget.Toast.LENGTH_SHORT).show() }
         findViewById<LinearLayout>(R.id.card_chess).setOnClickListener { toast() }
