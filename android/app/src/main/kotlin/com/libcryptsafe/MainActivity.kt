@@ -166,15 +166,18 @@ class MainActivity : AppCompatActivity() {
         val moreView  = findViewById<LinearLayout>(R.id.container_more)
         val tabGames  = findViewById<TextView>(R.id.tab_games)
         val gamesView = findViewById<android.widget.ScrollView>(R.id.container_games)
+        val tabContacts = findViewById<TextView>(R.id.tab_contacts)
+        val contactsView = findViewById<android.widget.ScrollView>(R.id.container_contacts)
 
 // Единый переключатель вкладок: показывает один контейнер, гасит остальные.
         // active — id активного таба. inputBar виден только на чате.
-        val tabs = listOf(tabChat, tabNet, tabMore, tabGames)
+        val tabs = listOf(tabChat, tabNet, tabMore, tabGames, tabContacts)
         fun selectTab(active: TextView) {
             chatView.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
             netView.visibility   = if (active == tabNet)   android.view.View.VISIBLE else android.view.View.GONE
             moreView.visibility  = if (active == tabMore)  android.view.View.VISIBLE else android.view.View.GONE
             gamesView.visibility = if (active == tabGames) android.view.View.VISIBLE else android.view.View.GONE
+            contactsView.visibility = if (active == tabContacts) android.view.View.VISIBLE else android.view.View.GONE
             inputBar.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
             for (t in tabs) {
                 val on = t == active
@@ -187,6 +190,7 @@ class MainActivity : AppCompatActivity() {
         tabNet.setOnClickListener   { selectTab(tabNet); updateNetworkPanel() }
         tabMore.setOnClickListener  { selectTab(tabMore) }
         tabGames.setOnClickListener { selectTab(tabGames) }
+        tabContacts.setOnClickListener { selectTab(tabContacts) }
     }
 
     // Карточки игр (пока заглушки — игры в разработке)

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -44,6 +45,11 @@
             android:padding="9dp"
             android:textColor="#7CFFB0"
             android:textSize="13sp"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="9sp"
+            app:autoSizeMaxTextSize="13sp"
+            app:autoSizeStepGranularity="1sp"
             android:background="@drawable/tab_active"/>
         <TextView
             android:id="@+id/tab_network"
@@ -56,6 +62,11 @@
             android:layout_marginStart="8dp"
             android:textColor="#8A93A0"
             android:textSize="13sp"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="9sp"
+            app:autoSizeMaxTextSize="13sp"
+            app:autoSizeStepGranularity="1sp"
             android:background="@drawable/tab_inactive"/>
         <TextView
             android:id="@+id/tab_more"
@@ -68,6 +79,11 @@
             android:layout_marginStart="8dp"
             android:textColor="#8A93A0"
             android:textSize="13sp"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="9sp"
+            app:autoSizeMaxTextSize="13sp"
+            app:autoSizeStepGranularity="1sp"
             android:background="@drawable/tab_inactive"/>
         <TextView
             android:id="@+id/tab_games"
@@ -80,6 +96,28 @@
             android:layout_marginStart="8dp"
             android:textColor="#8A93A0"
             android:textSize="13sp"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="9sp"
+            app:autoSizeMaxTextSize="13sp"
+            app:autoSizeStepGranularity="1sp"
+            android:background="@drawable/tab_inactive"/>
+        <TextView
+            android:id="@+id/tab_contacts"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/tab_contacts"
+            android:gravity="center"
+            android:padding="9dp"
+            android:layout_marginStart="8dp"
+            android:textColor="#8A93A0"
+            android:textSize="13sp"
+            android:maxLines="1"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="9sp"
+            app:autoSizeMaxTextSize="13sp"
+            app:autoSizeStepGranularity="1sp"
             android:background="@drawable/tab_inactive"/>
     </LinearLayout>
 
@@ -405,6 +443,27 @@
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_soon" android:textColor="#8A93A0" android:textSize="12sp" android:paddingTop="2dp"/>
                 </LinearLayout>
             </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <ScrollView
+        android:id="@+id/container_contacts"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/tv_contacts_empty"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/contacts_empty"
+                android:textColor="#8A93A0"
+                android:textSize="13sp"
+                android:paddingTop="8dp"/>
         </LinearLayout>
     </ScrollView>
 

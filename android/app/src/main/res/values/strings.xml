@@ -73,4 +73,6 @@
     <string name="my_id_desc">Share this ID so others can add you. It never leaves your device unless you share it.</string>
     <string name="my_id_copy">Copy</string>
     <string name="my_id_copied">ID copied</string>
+    <string name="tab_contacts">Contacts</string>
+    <string name="contacts_empty">No contacts yet</string>
 </resources>
