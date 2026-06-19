@@ -64,3 +64,15 @@ fun applyMove(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameSta
     // dice и turn пока не трогаем — это кирпичи следующих этапов
     return state.copy(board = newBoard)
 }
+
+
+// ===== БРОСОК ЗАРОВ (кубики) =====
+// Чистая функция: кидает два кубика 1..6, кладёт в dice, возвращает НОВОЕ состояние.
+// Сам бросок НЕ раздаёт ходы при дубле — это правило применения (следующий этап).
+// Совпадение значений (дубль) тут просто допустимый исход двух бросков.
+// Не зависит от View: тот же бросок применится при синхронизации по сети.
+fun rollDice(state: NardiGameState): NardiGameState {
+    val a = (1..6).random()
+    val b = (1..6).random()
+    return state.copy(dice = Pair(a, b))
+}
