@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 
@@ -35,6 +36,16 @@ class NardiBoardView @JvmOverloads constructor(
     }
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#13231A"); style = Paint.Style.FILL
+    }
+    // Кубики (зары)
+    private val dieFacePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#C5D6CC"); style = Paint.Style.FILL
+    }
+    private val diePipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0F1C15"); style = Paint.Style.FILL
+    }
+    private val dieEdgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#7CFFB0"); style = Paint.Style.STROKE; strokeWidth = 2f
     }
     private val pointPaintA = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#1B3326"); style = Paint.Style.FILL
@@ -104,8 +115,23 @@ class NardiBoardView @JvmOverloads constructor(
         return if (topRow) 23 - col else col
     }
 
+    // Тап попал в зону центрального бара? (для триггера броска заров)
+    private fun isInBar(x: Float, y: Float): Boolean {
+        val w = width.toFloat(); val h = height.toFloat()
+        if (y < 0f || y > h) return false
+        val barLeft = (w - barWidth) / 2f
+        return x >= barLeft && x <= barLeft + barWidth
+    }
+
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+            // Тап по бару -> бросок заров (выбор пунктов не трогаем)
+            if (isInBar(event.x, event.y)) {
+                state = rollDice(state)
+                android.util.Log.d("NardiDice", "roll -> ${state.dice}")
+                invalidate()
+                return true
+            }
             val clicked = pointAt(event.x, event.y)
             android.util.Log.d("NardiTouch", "tap -> point=$clicked, selected=$selectedPoint")
             val from = selectedPoint
@@ -130,6 +156,37 @@ class NardiBoardView @JvmOverloads constructor(
         return super.onTouchEvent(event)
     }
 
+    // Какие из 9 ячеек сетки 3x3 заполнены точками для значения 1..6.
+    // Индексы: 0 1 2 / 3 4 5 / 6 7 8.
+    private val pipMap = mapOf(
+        1 to intArrayOf(4),
+        2 to intArrayOf(0, 8),
+        3 to intArrayOf(0, 4, 8),
+        4 to intArrayOf(0, 2, 6, 8),
+        5 to intArrayOf(0, 2, 4, 6, 8),
+        6 to intArrayOf(0, 2, 3, 5, 6, 8)
+    )
+
+    // Рисует один кубик: грань (скруглённый квадрат) + точки по значению.
+    private fun drawDie(canvas: Canvas, cx: Float, cy: Float, size: Float, value: Int) {
+        val half = size / 2f
+        val r = size * 0.18f  // скругление углов
+        val rect = RectF(cx - half, cy - half, cx + half, cy + half)
+        canvas.drawRoundRect(rect, r, r, dieFacePaint)
+        canvas.drawRoundRect(rect, r, r, dieEdgePaint)
+        val pips = pipMap[value] ?: return
+        val pipR = size * 0.09f
+        // центры 9 ячеек сетки 3x3 внутри кубика (с отступом от краёв)
+        val gap = size * 0.28f
+        for (cell in pips) {
+            val col = cell % 3   // 0,1,2
+            val row = cell / 3   // 0,1,2
+            val px = cx + (col - 1) * gap
+            val py = cy + (row - 1) * gap
+            canvas.drawCircle(px, py, pipR, diePipPaint)
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val w = width.toFloat()
@@ -139,6 +196,14 @@ class NardiBoardView @JvmOverloads constructor(
 
         val barLeft = (w - barWidth) / 2f
         canvas.drawRect(barLeft, 0f, barLeft + barWidth, h, barPaint)
+
+        // Зары на баре (если брошены): два кубика по вертикали в центре
+        state.dice?.let { (d1, d2) ->
+            val dieSize = barWidth * 1.6f
+            val cx = w / 2f
+            drawDie(canvas, cx, h / 2f - dieSize * 0.8f, dieSize, d1)
+            drawDie(canvas, cx, h / 2f + dieSize * 0.8f, dieSize, d2)
+        }
 
         val off = framePaint.strokeWidth / 2f
         canvas.drawRect(off, off, w - off, h - off, framePaint)
