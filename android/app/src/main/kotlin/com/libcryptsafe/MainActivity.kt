@@ -395,7 +395,8 @@ class MainActivity : AppCompatActivity() {
         // Закрываем старое соединение перед созданием нового (анти-дубликат)
         webSocket?.cancel()
         webSocket = null
-        val request = Request.Builder().url(SERVER_URL).build()
+        val request = Request.Builder().url(SERVER_URL)
+            .addHeader("ngrok-skip-browser-warning", "true").build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(ws: WebSocket, response: Response) {
