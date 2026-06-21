@@ -75,6 +75,9 @@ class NardiBoardView @JvmOverloads constructor(
     }
 
     private val pointPath = android.graphics.Path()
+    private val debugNumPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FFEE66"); textAlign = Paint.Align.CENTER
+    }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -234,6 +237,10 @@ class NardiBoardView @JvmOverloads constructor(
             }
             pointPath.close()
             canvas.drawPath(pointPath, paint)
+            // DEBUG номер пункта
+            debugNumPaint.textSize = pointWidth * 0.5f
+            val numY = if (i < 12) h - 8f else pointWidth * 0.6f
+            canvas.drawText(i.toString(), pointCenterX(i), numY, debugNumPaint)
         }
 
         // Подсветка выбранного пункта (тап) — неоновый контур треугольника
