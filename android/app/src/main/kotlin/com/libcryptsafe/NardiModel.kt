@@ -76,3 +76,20 @@ fun rollDice(state: NardiGameState): NardiGameState {
     val b = (1..6).random()
     return state.copy(dice = Pair(a, b))
 }
+
+
+// ===== ЛЕГАЛЬНОСТЬ ХОДА (кирпич 1: направление + дистанция) =====
+// Проверяет ТОЛЬКО: движение в верном направлении и дистанция == зар.
+// НЕ проверяет: занятость пункта соперником, голову, bear-off — далее.
+// Направление длинных нард: индекс убывает (23 -> 0).
+fun moveDistance(fromIndex: Int, toIndex: Int): Int = fromIndex - toIndex
+
+fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
+    if (fromIndex !in 0..23 || toIndex !in 0..23) return false
+    val dice = state.dice ?: return false           // зары не брошены
+    val from = state.board[fromIndex]
+    if (from.count <= 0 || from.player == PlayerType.NONE) return false
+    val dist = moveDistance(fromIndex, toIndex)
+    if (dist <= 0) return false                     // только убывание индекса
+    return dist == dice.first || dist == dice.second
+}
