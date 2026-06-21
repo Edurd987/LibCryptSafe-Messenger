@@ -127,7 +127,7 @@ class NardiBoardView @JvmOverloads constructor(
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
             // Тап по бару -> бросок заров (выбор пунктов не трогаем)
             if (isInBar(event.x, event.y)) {
-                state = rollDice(state)
+                if (state.dice == null) state = rollDice(state)  // бросок только раз, пока зары не сброшены
                 android.util.Log.d("NardiDice", "roll -> ${state.dice}")
                 invalidate()
                 return true
@@ -145,9 +145,14 @@ class NardiBoardView @JvmOverloads constructor(
                 }
                 // В: второй этап (старт уже выбран)
                 clicked == from -> selectedPoint = null         // тот же пункт -> отмена
-                else -> {                                       // иначе -> ход
-                    state = applyMove(state, from, clicked)
-                    selectedPoint = null
+                else -> {                                       // иначе -> попытка хода
+                    android.util.Log.d("NardiLegal", "from=$from to=$clicked dist=${from-clicked} dice=${state.dice} legal=${isLegalMove(state, from, clicked)}")
+                    if (isLegalMove(state, from, clicked)) {
+                        val dist = from - clicked
+                        state = applyMove(state, from, clicked)
+                        state = consumeDie(state, dist)         // потратить использованный зар
+                    }
+                    selectedPoint = null                        // легален или нет -> снять выбор
                 }
             }
             invalidate()
@@ -197,12 +202,15 @@ class NardiBoardView @JvmOverloads constructor(
         val barLeft = (w - barWidth) / 2f
         canvas.drawRect(barLeft, 0f, barLeft + barWidth, h, barPaint)
 
-        // Зары на баре (если брошены): два кубика по вертикали в центре
-        state.dice?.let { (d1, d2) ->
+        // Зары на баре (если брошены): список 1..4 кубиков по вертикали, по центру
+        state.dice?.let { dice ->
             val dieSize = barWidth * 1.6f
             val cx = w / 2f
-            drawDie(canvas, cx, h / 2f - dieSize * 0.8f, dieSize, d1)
-            drawDie(canvas, cx, h / 2f + dieSize * 0.8f, dieSize, d2)
+            val gap = dieSize * 1.1f
+            val startY = h / 2f - gap * (dice.size - 1) / 2f
+            dice.forEachIndexed { i, value ->
+                drawDie(canvas, cx, startY + i * gap, dieSize, value)
+            }
         }
 
         val off = framePaint.strokeWidth / 2f

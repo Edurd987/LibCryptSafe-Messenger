@@ -15,7 +15,7 @@ data class PointState(
 // Полное состояние партии длинных нард
 data class NardiGameState(
     val board: List<PointState>,  // ровно 24 пункта
-    val dice: Pair<Int, Int>?,    // текущие зары (null если не брошены)
+    val dice: List<Int>?,         // оставшиеся зары (null = не брошены/ход завершён)
     val turn: PlayerType          // чей ход
 )
 
@@ -74,7 +74,8 @@ fun applyMove(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameSta
 fun rollDice(state: NardiGameState): NardiGameState {
     val a = (1..6).random()
     val b = (1..6).random()
-    return state.copy(dice = Pair(a, b))
+    val dice = if (a == b) listOf(a, a, a, a) else listOf(a, b)  // дубль -> 4 хода
+    return state.copy(dice = dice)
 }
 
 
@@ -91,5 +92,16 @@ fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     if (from.count <= 0 || from.player == PlayerType.NONE) return false
     val dist = moveDistance(fromIndex, toIndex)
     if (dist <= 0) return false                     // только убывание индекса
-    return dist == dice.first || dist == dice.second
+    return dist in dice
+}
+
+
+// ===== ТРАТА ЗАРА после легального хода =====
+// Убирает ОДИН зар, равный пройденной дистанции. Список пуст -> dice = null.
+fun consumeDie(state: NardiGameState, dist: Int): NardiGameState {
+    val dice = state.dice ?: return state
+    val idx = dice.indexOf(dist)
+    if (idx < 0) return state                       // такого зара нет
+    val remaining = dice.toMutableList().apply { removeAt(idx) }
+    return state.copy(dice = if (remaining.isEmpty()) null else remaining)
 }
