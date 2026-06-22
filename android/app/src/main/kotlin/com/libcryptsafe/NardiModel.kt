@@ -83,14 +83,25 @@ fun rollDice(state: NardiGameState): NardiGameState {
 // Проверяет ТОЛЬКО: движение в верном направлении и дистанция == зар.
 // НЕ проверяет: занятость пункта соперником, голову, bear-off — далее.
 // Направление длинных нард: индекс убывает (23 -> 0).
-fun moveDistance(fromIndex: Int, toIndex: Int): Int = fromIndex - toIndex
+// Маршруты-кольца: позиция = шаг от головы к дому. Дистанция по маршруту,
+// а не по разности номеров -> корректны заворот и движение по полю.
+private val WHITE_ROUTE = listOf(23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
+private val BLACK_ROUTE = listOf(11,10,9,8,7,6,5,4,3,2,1,0,23,22,21,20,19,18,17,16,15,14,13,12)
+private fun routeFor(player: PlayerType): List<Int> =
+    if (player == PlayerType.BLACK) BLACK_ROUTE else WHITE_ROUTE
+fun moveDistance(player: PlayerType, fromIndex: Int, toIndex: Int): Int {
+    val route = routeFor(player)
+    val pf = route.indexOf(fromIndex); val pt = route.indexOf(toIndex)
+    if (pf < 0 || pt < 0) return -1
+    return pt - pf
+}
 
 fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     if (fromIndex !in 0..23 || toIndex !in 0..23) return false
     val dice = state.dice ?: return false           // зары не брошены
     val from = state.board[fromIndex]
     if (from.count <= 0 || from.player == PlayerType.NONE) return false
-    val dist = moveDistance(fromIndex, toIndex)
+    val dist = moveDistance(from.player, fromIndex, toIndex)
     if (dist <= 0) return false                     // только убывание индекса
     return dist in dice
 }

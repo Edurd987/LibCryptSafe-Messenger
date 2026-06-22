@@ -151,7 +151,8 @@ class NardiBoardView @JvmOverloads constructor(
                 else -> {                                       // иначе -> попытка хода
                     android.util.Log.d("NardiLegal", "from=$from to=$clicked dist=${from-clicked} dice=${state.dice} legal=${isLegalMove(state, from, clicked)}")
                     if (isLegalMove(state, from, clicked)) {
-                        val dist = from - clicked
+                        val mover = state.board[from].player
+                        val dist = moveDistance(mover, from, clicked)  // дистанция по маршруту
                         state = applyMove(state, from, clicked)
                         state = consumeDie(state, dist)         // потратить использованный зар
                     }
