@@ -101,6 +101,7 @@ fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     val dice = state.dice ?: return false           // зары не брошены
     val from = state.board[fromIndex]
     if (from.count <= 0 || from.player == PlayerType.NONE) return false
+    if (from.player != state.turn) return false     // только своим цветом
     val dist = moveDistance(from.player, fromIndex, toIndex)
     if (dist <= 0) return false                     // только убывание индекса
     return dist in dice
@@ -114,5 +115,9 @@ fun consumeDie(state: NardiGameState, dist: Int): NardiGameState {
     val idx = dice.indexOf(dist)
     if (idx < 0) return state                       // такого зара нет
     val remaining = dice.toMutableList().apply { removeAt(idx) }
-    return state.copy(dice = if (remaining.isEmpty()) null else remaining)
+    if (remaining.isEmpty()) {
+        val next = if (state.turn == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
+        return state.copy(dice = null, turn = next)  // зары кончились -> ход сопернику
+    }
+    return state.copy(dice = remaining)
 }
