@@ -131,8 +131,12 @@ class NardiBoardView @JvmOverloads constructor(
             // Тап по бару -> бросок заров (выбор пунктов не трогаем)
             if (isInBar(event.x, event.y)) {
                 if (state.dice == null) {
-                    state = rollDice(state)
-                    if (!hasAnyLegalMove(state)) state = burnTurn(state)  // нет ходов -> сгорает
+                    if (state.isOpening) {
+                        state = rollOpening(state)  // розыгрыш первого хода
+                    } else {
+                        state = rollDice(state)
+                        if (!hasAnyLegalMove(state)) state = burnTurn(state)
+                    }
                 }
                 android.util.Log.d("NardiDice", "roll -> ${state.dice}")
                 invalidate()

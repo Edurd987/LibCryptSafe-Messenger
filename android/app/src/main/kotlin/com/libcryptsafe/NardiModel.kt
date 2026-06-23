@@ -17,7 +17,8 @@ data class NardiGameState(
     val board: List<PointState>,  // ровно 24 пункта
     val dice: List<Int>?,         // оставшиеся зары (null = не брошены/ход завершён)
     val turn: PlayerType,         // чей ход
-    val headUsed: Boolean = false // снята ли уже шашка с головы в этом ходу
+    val headUsed: Boolean = false, // снята ли уже шашка с головы в этом ходу
+    val isOpening: Boolean = true // фаза розыгрыша первого хода
 )
 
 // Начальная расстановка длинных нард:
@@ -75,6 +76,17 @@ fun applyMove(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameSta
 // Сам бросок НЕ раздаёт ходы при дубле — это правило применения (следующий этап).
 // Совпадение значений (дубль) тут просто допустимый исход двух бросков.
 // Не зависит от View: тот же бросок применится при синхронизации по сети.
+// ===== РОЗЫГРЫШ ПЕРВОГО ХОДА =====
+// Оба кидают по зару. Больше -> тот ходит первым этими двумя зарами.
+// Равенство -> переброс (isOpening остаётся true, dice = null).
+fun rollOpening(state: NardiGameState): NardiGameState {
+    val w = (1..6).random()
+    val b = (1..6).random()
+    if (w == b) return state.copy(dice = null, isOpening = true)  // ничья -> переброс
+    val first = if (w > b) PlayerType.WHITE else PlayerType.BLACK
+    return state.copy(dice = listOf(w, b), turn = first, isOpening = false)
+}
+
 fun rollDice(state: NardiGameState): NardiGameState {
     val a = (1..6).random()
     val b = (1..6).random()
