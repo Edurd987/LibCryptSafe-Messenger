@@ -16,7 +16,8 @@ data class PointState(
 data class NardiGameState(
     val board: List<PointState>,  // ровно 24 пункта
     val dice: List<Int>?,         // оставшиеся зары (null = не брошены/ход завершён)
-    val turn: PlayerType          // чей ход
+    val turn: PlayerType,         // чей ход
+    val headUsed: Boolean = false // снята ли уже шашка с головы в этом ходу
 )
 
 // Начальная расстановка длинных нард:
@@ -29,7 +30,8 @@ fun initLongNardi(): NardiGameState {
     return NardiGameState(
         board = board,
         dice = null,
-        turn = PlayerType.WHITE  // белые ходят первыми
+        turn = PlayerType.WHITE,  // белые ходят первыми
+        headUsed = false
     )
 }
 
@@ -62,7 +64,9 @@ fun applyMove(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameSta
     newBoard[toIndex] = PointState(to.count + 1, mover)
 
     // dice и turn пока не трогаем — это кирпичи следующих этапов
-    return state.copy(board = newBoard)
+    val head = if (mover == PlayerType.WHITE) 23 else 11
+    val headUsed = state.headUsed || fromIndex == head
+    return state.copy(board = newBoard, headUsed = headUsed)
 }
 
 
@@ -102,6 +106,10 @@ fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     val from = state.board[fromIndex]
     if (from.count <= 0 || from.player == PlayerType.NONE) return false
     if (from.player != state.turn) return false     // только своим цветом
+    val head = if (from.player == PlayerType.WHITE) 23 else 11
+    if (fromIndex == head && state.headUsed) return false  // с головы только 1 за ход
+    val to = state.board[toIndex]
+    if (to.count > 0 && to.player != from.player) return false  // пункт занят соперником
     val dist = moveDistance(from.player, fromIndex, toIndex)
     if (dist <= 0) return false                     // только убывание индекса
     return dist in dice
@@ -117,7 +125,7 @@ fun consumeDie(state: NardiGameState, dist: Int): NardiGameState {
     val remaining = dice.toMutableList().apply { removeAt(idx) }
     if (remaining.isEmpty()) {
         val next = if (state.turn == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
-        return state.copy(dice = null, turn = next)  // зары кончились -> ход сопернику
+        return state.copy(dice = null, turn = next, headUsed = false)  // ход сопернику, сброс головы
     }
     return state.copy(dice = remaining)
 }
