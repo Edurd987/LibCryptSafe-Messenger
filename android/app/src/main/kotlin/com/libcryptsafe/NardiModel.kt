@@ -129,3 +129,24 @@ fun consumeDie(state: NardiGameState, dist: Int): NardiGameState {
     }
     return state.copy(dice = remaining)
 }
+
+
+// ===== ЕСТЬ ЛИ ХОТЯ БЫ ОДИН ЛЕГАЛЬНЫЙ ХОД =====
+// Перебор всех from(0..23) x to(0..23). Если ни одного — ход сгорает.
+fun hasAnyLegalMove(state: NardiGameState): Boolean {
+    if (state.dice == null) return false
+    for (from in 0..23) {
+        if (state.board[from].count <= 0) continue
+        if (state.board[from].player != state.turn) continue
+        for (to in 0..23) {
+            if (isLegalMove(state, from, to)) return true
+        }
+    }
+    return false
+}
+
+// Сжигает ход (нет легальных): сброс заров, передача сопернику.
+fun burnTurn(state: NardiGameState): NardiGameState {
+    val next = if (state.turn == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
+    return state.copy(dice = null, turn = next, headUsed = false)
+}

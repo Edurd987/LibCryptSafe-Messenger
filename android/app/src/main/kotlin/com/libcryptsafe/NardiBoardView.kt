@@ -130,7 +130,10 @@ class NardiBoardView @JvmOverloads constructor(
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
             // Тап по бару -> бросок заров (выбор пунктов не трогаем)
             if (isInBar(event.x, event.y)) {
-                if (state.dice == null) state = rollDice(state)  // бросок только раз, пока зары не сброшены
+                if (state.dice == null) {
+                    state = rollDice(state)
+                    if (!hasAnyLegalMove(state)) state = burnTurn(state)  // нет ходов -> сгорает
+                }
                 android.util.Log.d("NardiDice", "roll -> ${state.dice}")
                 invalidate()
                 return true
@@ -155,6 +158,7 @@ class NardiBoardView @JvmOverloads constructor(
                         val dist = moveDistance(mover, from, clicked)  // дистанция по маршруту
                         state = applyMove(state, from, clicked)
                         state = consumeDie(state, dist)         // потратить использованный зар
+                        if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
                     }
                     selectedPoint = null                        // легален или нет -> снять выбор
                 }
