@@ -155,6 +155,7 @@ fun hasAnyLegalMove(state: NardiGameState): Boolean {
         for (to in 0..23) {
             if (isLegalMove(state, from, to)) return true
         }
+        if (canBearOff(state, from)) return true    // выброс тоже легальный ход
     }
     return false
 }
@@ -199,6 +200,7 @@ fun distToOff(player: PlayerType, fromIndex: Int): Int {
 // Условие: все дома + (зар точно равен расстоянию ИЛИ зар больше и нет шашек дальше от выхода).
 fun canBearOff(state: NardiGameState, fromIndex: Int): Boolean {
     val pt = state.board[fromIndex]
+    android.util.Log.d("NardiBear2", "from=$fromIndex cnt=${pt.count} player=${pt.player} turn=${state.turn} allHome=${if(pt.count>0) allHome(state,pt.player) else false}")
     if (pt.count <= 0 || pt.player != state.turn) return false
     if (!allHome(state, pt.player)) return false
     val dice = state.dice ?: return false
