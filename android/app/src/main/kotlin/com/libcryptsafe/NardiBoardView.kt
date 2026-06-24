@@ -15,6 +15,7 @@ class NardiBoardView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyle: Int = 0
 ) : View(context, attrs, defStyle) {
+    private var gameOver = false
 
     // Состояние партии (рисуем ИЗ модели, не выдумываем расстановку)
     private var state: NardiGameState = initLongNardi()
@@ -127,6 +128,7 @@ class NardiBoardView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (gameOver) return true                   // партия окончена -> ввод заблокирован
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
             // Тап по бару -> бросок заров (выбор пунктов не трогаем)
             if (isInBar(event.x, event.y)) {
@@ -162,7 +164,14 @@ class NardiBoardView @JvmOverloads constructor(
                         state = bearOff(state, from)
                         val after = state.bornOffWhite + state.bornOffBlack
                         android.util.Log.d("NardiBearFSM", "bearOff before=$before after=$after dice=${state.dice}")
-                        if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+                        val win = winner(state)
+                        if (win != null) {
+                            val who = if (win == PlayerType.WHITE) "Белые" else "Чёрные"
+                            android.widget.Toast.makeText(context, "$who победили!", android.widget.Toast.LENGTH_LONG).show()
+                            gameOver = true
+                        } else if (state.dice != null && !hasAnyLegalMove(state)) {
+                            state = burnTurn(state)
+                        }
                     }
                     selectedPoint = null
                 }
