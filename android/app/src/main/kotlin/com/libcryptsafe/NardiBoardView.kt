@@ -76,9 +76,6 @@ class NardiBoardView @JvmOverloads constructor(
     }
 
     private val pointPath = android.graphics.Path()
-    private val debugNumPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FFEE66"); textAlign = Paint.Align.CENTER
-    }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -140,12 +137,10 @@ class NardiBoardView @JvmOverloads constructor(
                         if (!hasAnyLegalMove(state)) state = burnTurn(state)
                     }
                 }
-                android.util.Log.d("NardiDice", "roll -> ${state.dice}")
                 invalidate()
                 return true
             }
             val clicked = pointAt(event.x, event.y)
-            android.util.Log.d("NardiTouch", "tap -> point=$clicked, selected=$selectedPoint")
             val from = selectedPoint
             when {
                 // А: мимо доски или по бару -> сброс выбора
@@ -158,12 +153,8 @@ class NardiBoardView @JvmOverloads constructor(
                 // В: второй этап (старт уже выбран)
                 clicked == from -> {                            // повторный тап
                     val can = canBearOff(state, from)
-                    android.util.Log.d("NardiBearFSM", "repeat tap from=$from can=$can dice=${state.dice}")
                     if (can) {
-                        val before = state.bornOffWhite + state.bornOffBlack
                         state = bearOff(state, from)
-                        val after = state.bornOffWhite + state.bornOffBlack
-                        android.util.Log.d("NardiBearFSM", "bearOff before=$before after=$after dice=${state.dice}")
                         val win = winner(state)
                         if (win != null) {
                             val who = if (win == PlayerType.WHITE) "Белые" else "Чёрные"
@@ -176,7 +167,6 @@ class NardiBoardView @JvmOverloads constructor(
                     selectedPoint = null
                 }
                 else -> {                                       // иначе -> попытка хода
-                    android.util.Log.d("NardiLegal", "from=$from to=$clicked dist=${from-clicked} dice=${state.dice} legal=${isLegalMove(state, from, clicked)}")
                     if (isLegalMove(state, from, clicked)) {
                         val mover = state.board[from].player
                         val dist = moveDistance(mover, from, clicked)  // дистанция по маршруту
@@ -266,10 +256,6 @@ class NardiBoardView @JvmOverloads constructor(
             }
             pointPath.close()
             canvas.drawPath(pointPath, paint)
-            // DEBUG номер пункта
-            debugNumPaint.textSize = pointWidth * 0.5f
-            val numY = if (i < 12) h - 8f else pointWidth * 0.6f
-            canvas.drawText(i.toString(), pointCenterX(i), numY, debugNumPaint)
         }
 
         // Подсветка выбранного пункта (тап) — неоновый контур треугольника

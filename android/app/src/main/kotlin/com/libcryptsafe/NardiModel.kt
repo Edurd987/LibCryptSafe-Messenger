@@ -200,12 +200,10 @@ fun distToOff(player: PlayerType, fromIndex: Int): Int {
 // Условие: все дома + (зар точно равен расстоянию ИЛИ зар больше и нет шашек дальше от выхода).
 fun canBearOff(state: NardiGameState, fromIndex: Int): Boolean {
     val pt = state.board[fromIndex]
-    android.util.Log.d("NardiBear2", "from=$fromIndex cnt=${pt.count} player=${pt.player} turn=${state.turn} allHome=${if(pt.count>0) allHome(state,pt.player) else false}")
     if (pt.count <= 0 || pt.player != state.turn) return false
     if (!allHome(state, pt.player)) return false
     val dice = state.dice ?: return false
     val need = distToOff(pt.player, fromIndex)
-    android.util.Log.d("NardiBear", "from=$fromIndex need=$need dice=$dice allHome=${allHome(state, pt.player)}")
     if (need <= 0) return false
     if (need in dice) return true                    // точный выброс
     // выброс большим заром: только если это самая дальняя шашка в доме
