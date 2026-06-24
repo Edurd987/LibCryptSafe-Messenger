@@ -154,7 +154,18 @@ class NardiBoardView @JvmOverloads constructor(
                     // пустой пункт на первом этапе -> игнор
                 }
                 // В: второй этап (старт уже выбран)
-                clicked == from -> selectedPoint = null         // тот же пункт -> отмена
+                clicked == from -> {                            // повторный тап
+                    val can = canBearOff(state, from)
+                    android.util.Log.d("NardiBearFSM", "repeat tap from=$from can=$can dice=${state.dice}")
+                    if (can) {
+                        val before = state.bornOffWhite + state.bornOffBlack
+                        state = bearOff(state, from)
+                        val after = state.bornOffWhite + state.bornOffBlack
+                        android.util.Log.d("NardiBearFSM", "bearOff before=$before after=$after dice=${state.dice}")
+                        if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+                    }
+                    selectedPoint = null
+                }
                 else -> {                                       // иначе -> попытка хода
                     android.util.Log.d("NardiLegal", "from=$from to=$clicked dist=${from-clicked} dice=${state.dice} legal=${isLegalMove(state, from, clicked)}")
                     if (isLegalMove(state, from, clicked)) {

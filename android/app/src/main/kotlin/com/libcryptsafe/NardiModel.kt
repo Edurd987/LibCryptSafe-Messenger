@@ -18,7 +18,9 @@ data class NardiGameState(
     val dice: List<Int>?,         // оставшиеся зары (null = не брошены/ход завершён)
     val turn: PlayerType,         // чей ход
     val headUsed: Boolean = false, // снята ли уже шашка с головы в этом ходу
-    val isOpening: Boolean = true // фаза розыгрыша первого хода
+    val isOpening: Boolean = true, // фаза розыгрыша первого хода
+    val bornOffWhite: Int = 0,    // выброшено белых
+    val bornOffBlack: Int = 0     // выброшено чёрных
 )
 
 // Начальная расстановка длинных нард:
@@ -161,4 +163,83 @@ fun hasAnyLegalMove(state: NardiGameState): Boolean {
 fun burnTurn(state: NardiGameState): NardiGameState {
     val next = if (state.turn == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
     return state.copy(dice = null, turn = next, headUsed = false)
+}
+
+
+// ===== ДОМ и ФИНАЛ =====
+// Дом белых: пункты 0..5. Дом чёрных: пункты 12..17.
+private fun homePoints(player: PlayerType): IntRange =
+    if (player == PlayerType.WHITE) 0..5 else 12..17
+
+// Все 15 шашек игрока в его доме (и/или уже выброшены)?
+fun allHome(state: NardiGameState, player: PlayerType): Boolean {
+    val home = homePoints(player)
+    var inHome = 0
+    for (i in 0..23) {
+        val pt = state.board[i]
+        if (pt.player == player && pt.count > 0) {
+            if (i !in home) return false        // есть шашка вне дома
+            inHome += pt.count
+        }
+    }
+    return true
+}
+
+
+// Расстояние от пункта до выхода (за финиш) по маршруту игрока.
+// pos в маршруте 0..23; до выхода = 24 - pos.
+fun distToOff(player: PlayerType, fromIndex: Int): Int {
+    val route = routeFor(player)
+    val pf = route.indexOf(fromIndex)
+    if (pf < 0) return -1
+    return 24 - pf
+}
+
+// Можно ли выбросить шашку с fromIndex текущим заром?
+// Условие: все дома + (зар точно равен расстоянию ИЛИ зар больше и нет шашек дальше от выхода).
+fun canBearOff(state: NardiGameState, fromIndex: Int): Boolean {
+    val pt = state.board[fromIndex]
+    if (pt.count <= 0 || pt.player != state.turn) return false
+    if (!allHome(state, pt.player)) return false
+    val dice = state.dice ?: return false
+    val need = distToOff(pt.player, fromIndex)
+    android.util.Log.d("NardiBear", "from=$fromIndex need=$need dice=$dice allHome=${allHome(state, pt.player)}")
+    if (need <= 0) return false
+    if (need in dice) return true                    // точный выброс
+    // выброс большим заром: только если это самая дальняя шашка в доме
+    val bigger = dice.any { it > need }
+    if (!bigger) return false
+    val route = routeFor(pt.player)
+    val pf = route.indexOf(fromIndex)
+    for (i in 0..23) {                               // есть ли шашка ДАЛЬШЕ от выхода (меньшая pos)?
+        val p2 = state.board[i]
+        if (p2.player == pt.player && p2.count > 0 && route.indexOf(i) < pf) return false
+    }
+    return true
+}
+
+// Выброс шашки: снять с доски, +1 к счётчику, потратить зар.
+fun bearOff(state: NardiGameState, fromIndex: Int): NardiGameState {
+    if (!canBearOff(state, fromIndex)) return state
+    val pt = state.board[fromIndex]
+    val dice = state.dice ?: return state
+    val need = distToOff(pt.player, fromIndex)
+    val die = if (need in dice) need else dice.filter { it > need }.min()
+    val nb = state.board.toMutableList()
+    val nc = pt.count - 1
+    nb[fromIndex] = if (nc == 0) PointState(0, PlayerType.NONE) else PointState(nc, pt.player)
+    var ns = state.copy(
+        board = nb,
+        bornOffWhite = state.bornOffWhite + if (pt.player == PlayerType.WHITE) 1 else 0,
+        bornOffBlack = state.bornOffBlack + if (pt.player == PlayerType.BLACK) 1 else 0
+    )
+    ns = consumeDie(ns, die)
+    return ns
+}
+
+// Победитель (все 15 выброшены) или null.
+fun winner(state: NardiGameState): PlayerType? = when {
+    state.bornOffWhite >= 15 -> PlayerType.WHITE
+    state.bornOffBlack >= 15 -> PlayerType.BLACK
+    else -> null
 }
