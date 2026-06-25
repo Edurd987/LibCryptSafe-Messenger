@@ -19,6 +19,48 @@ class NardiBoardView @JvmOverloads constructor(
 
     // Состояние партии (рисуем ИЗ модели, не выдумываем расстановку)
     private var state: NardiGameState = initLongNardi()
+    // ===== РЕЖИМ БОТА =====
+    var botEnabled: Boolean = false               // играем против бота?
+    var botColor: PlayerType = PlayerType.BLACK   // цвет бота
+    private val botHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    // Ход бота: бросает зары (если надо) и делает один шаг; планирует следующий.
+    private fun botStep() {
+        if (!botEnabled || state.turn != botColor || gameOver) return
+        if (state.dice == null) {
+            if (state.isOpening) {
+                state = rollOpening(state)        // розыгрыш: после него ход мог уйти человеку
+                invalidate()
+                if (state.turn != botColor) return  // розыгрыш выиграл человек -> стоп
+                if (!hasAnyLegalMove(state)) { state = burnTurn(state); invalidate(); return }
+            } else {
+                state = rollDice(state)
+                invalidate()
+                if (!hasAnyLegalMove(state)) { state = burnTurn(state); invalidate(); return }
+            }
+        }
+        val move = botChooseMove(state)
+        if (move == null) {                       // ходов нет -> сжечь
+            if (state.dice != null) state = burnTurn(state)
+            invalidate(); return
+        }
+        state = botApplyMove(state, move)
+        if (winner(state) != null) {
+            val who = if (winner(state) == PlayerType.WHITE) "Белые" else "Чёрные"
+            android.widget.Toast.makeText(context, "$who победили!", android.widget.Toast.LENGTH_LONG).show()
+            gameOver = true; invalidate(); return
+        }
+        if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+        invalidate()
+        if (state.turn == botColor && !gameOver)  // ещё ход бота -> следующий шаг с паузой
+            botHandler.postDelayed({ botStep() }, 1200)
+    }
+
+    // Запустить ход бота, если сейчас его очередь.
+    private fun maybeBotTurn() {
+        if (botEnabled && state.turn == botColor && !gameOver)
+            botHandler.postDelayed({ botStep() }, 1200)
+    }
 
     // Геометрия
     private var barWidth = 0f
@@ -138,6 +180,7 @@ class NardiBoardView @JvmOverloads constructor(
                     }
                 }
                 invalidate()
+                maybeBotTurn()
                 return true
             }
             val clicked = pointAt(event.x, event.y)
@@ -178,6 +221,7 @@ class NardiBoardView @JvmOverloads constructor(
                 }
             }
             invalidate()
+            maybeBotTurn()
             return true
         }
         return super.onTouchEvent(event)

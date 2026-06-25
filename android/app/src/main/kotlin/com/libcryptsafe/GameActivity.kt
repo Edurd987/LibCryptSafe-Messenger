@@ -13,5 +13,10 @@ class GameActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btn_exit_game).setOnClickListener {
             finish()  // вернуться в мессенджер
         }
+        // ВРЕМЕННО: включаем бота (чёрные) для теста
+        findViewById<NardiBoardView>(R.id.nardi_board).apply {
+            botEnabled = true
+            botColor = PlayerType.BLACK
+        }
     }
 }
