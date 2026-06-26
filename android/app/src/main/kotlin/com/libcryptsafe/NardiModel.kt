@@ -105,7 +105,7 @@ fun rollDice(state: NardiGameState): NardiGameState {
 // а не по разности номеров -> корректны заворот и движение по полю.
 private val WHITE_ROUTE = listOf(23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
 private val BLACK_ROUTE = listOf(11,10,9,8,7,6,5,4,3,2,1,0,23,22,21,20,19,18,17,16,15,14,13,12)
-private fun routeFor(player: PlayerType): List<Int> =
+fun routeFor(player: PlayerType): List<Int> =
     if (player == PlayerType.BLACK) BLACK_ROUTE else WHITE_ROUTE
 fun moveDistance(player: PlayerType, fromIndex: Int, toIndex: Int): Int {
     val route = routeFor(player)
