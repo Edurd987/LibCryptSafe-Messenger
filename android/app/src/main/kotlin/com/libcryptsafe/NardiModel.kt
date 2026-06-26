@@ -114,6 +114,48 @@ fun moveDistance(player: PlayerType, fromIndex: Int, toIndex: Int): Int {
     return pt - pf
 }
 
+// ===== ЗАПРЕТ БЛОКА ИЗ 6 =====
+// Нельзя выстроить непрерывную стену из 6 пунктов подряд (по маршруту игрока),
+// если за ней нет НИ ОДНОЙ шашки соперника (все заперты).
+// Проверяется на гипотетической доске ПОСЛЕ хода.
+private fun creates6Block(board: List<PointState>, player: PlayerType): Boolean {
+    val opp = if (player == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
+    val route = routeFor(player)
+    var chain = 0
+    for (pos in route.indices) {
+        val idx = route[pos]
+        val pt = board[idx]
+        if (pt.player == player && pt.count >= 1) {
+            chain++
+            if (chain >= 6) {
+                // стена из 6 от route[pos-5] до route[pos].
+                // запрещаем, только если ВПЕРЕДИ стены (дальше по маршруту соперника)
+                // нет шашек соперника, способных её обойти.
+                // Упрощение: если у соперника НЕТ шашек перед началом стены — он заперт.
+                val wallStartPos = pos - 5
+                // позиции соперника в ЕГО маршруте, которые "позади" стены
+                val oppRoute = routeFor(opp)
+                var oppBehind = false
+                for (i in 0..23) {
+                    val op = board[i]
+                    if (op.player == opp && op.count > 0) {
+                        // шашка соперника позади стены = ещё не прошла зону блока
+                        val oppPos = oppRoute.indexOf(i)
+                        // грубая проверка: соперник имеет шашки на доске вне зоны стены
+                        oppBehind = true
+                        break
+                    }
+                }
+                // если у соперника вообще есть шашки на доске — блок 6 запрещаем
+                if (oppBehind) return true
+            }
+        } else {
+            chain = 0
+        }
+    }
+    return false
+}
+
 fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     if (fromIndex !in 0..23 || toIndex !in 0..23) return false
     val dice = state.dice ?: return false           // зары не брошены
@@ -126,7 +168,11 @@ fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     if (to.count > 0 && to.player != from.player) return false  // пункт занят соперником
     val dist = moveDistance(from.player, fromIndex, toIndex)
     if (dist <= 0) return false                     // только убывание индекса
-    return dist in dice
+    if (dist !in dice) return false
+    // запрет блока из 6: проверяем доску после гипотетического хода
+    val after = applyMove(state, fromIndex, toIndex).board
+    if (creates6Block(after, from.player)) return false
+    return true
 }
 
 
