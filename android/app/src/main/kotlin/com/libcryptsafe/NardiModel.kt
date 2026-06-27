@@ -296,3 +296,20 @@ fun winner(state: NardiGameState): PlayerType? = when {
     state.bornOffBlack >= 15 -> PlayerType.BLACK
     else -> null
 }
+
+// Тип победы: 1 = обычная, 2 = Марс (проигравший не выбросил ни одной),
+// 3 = кокс (проигравший не завёл ни одной шашки в свой дом).
+fun winType(state: NardiGameState): Int {
+    val w = winner(state) ?: return 0
+    val loser = if (w == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
+    val loserOff = if (loser == PlayerType.WHITE) state.bornOffWhite else state.bornOffBlack
+    if (loserOff > 0) return 1                       // выбросил хотя бы одну -> обычная
+    // проигравший не выбросил ничего. Кокс, если у него нет шашек в доме.
+    val home = homePoints(loser)
+    var inHome = 0
+    for (i in 0..23) {
+        val pt = state.board[i]
+        if (pt.player == loser && pt.count > 0 && i in home) inHome += pt.count
+    }
+    return if (inHome == 0) 3 else 2                 // нет в доме -> кокс(3), иначе Марс(2)
+}

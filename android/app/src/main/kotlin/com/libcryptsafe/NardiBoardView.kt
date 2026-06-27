@@ -16,6 +16,15 @@ class NardiBoardView @JvmOverloads constructor(
     defStyle: Int = 0
 ) : View(context, attrs, defStyle) {
     private var gameOver = false
+    private var winBanner: String? = null         // текст баннера победы (null = скрыт)
+    private val bannerBgPaint = Paint().apply { color = Color.parseColor("#CC0A1A12") }
+    private val bannerTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#7CFFB0"); textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
+    }
+    private val bannerSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#C5D6CC"); textAlign = Paint.Align.CENTER
+    }
 
     // Состояние партии (рисуем ИЗ модели, не выдумываем расстановку)
     private var state: NardiGameState = initLongNardi()
@@ -46,9 +55,7 @@ class NardiBoardView @JvmOverloads constructor(
         }
         state = botApplyMove(state, move)
         if (winner(state) != null) {
-            val who = if (winner(state) == PlayerType.WHITE) "Белые" else "Чёрные"
-            android.widget.Toast.makeText(context, "$who победили!", android.widget.Toast.LENGTH_LONG).show()
-            gameOver = true; invalidate(); return
+            showWinBanner(); return
         }
         if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
         invalidate()
@@ -57,6 +64,20 @@ class NardiBoardView @JvmOverloads constructor(
     }
 
     // Запустить ход бота, если сейчас его очередь.
+    // Формирует и показывает баннер победы с учётом типа (обычная/Марс/кокс).
+    private fun showWinBanner() {
+        val w = winner(state) ?: return
+        val who = if (w == PlayerType.WHITE) "Белые" else "Чёрные"
+        val type = winType(state)
+        winBanner = when (type) {
+            3 -> "$who победили\nКОКС! ×3"
+            2 -> "$who победили\nМАРС! ×2"
+            else -> "$who победили\n×1"
+        }
+        gameOver = true
+        invalidate()
+    }
+
     private fun maybeBotTurn() {
         if (botEnabled && state.turn == botColor && !gameOver)
             botHandler.postDelayed({ botStep() }, 1200)
@@ -198,11 +219,8 @@ class NardiBoardView @JvmOverloads constructor(
                     val can = canBearOff(state, from)
                     if (can) {
                         state = bearOff(state, from)
-                        val win = winner(state)
-                        if (win != null) {
-                            val who = if (win == PlayerType.WHITE) "Белые" else "Чёрные"
-                            android.widget.Toast.makeText(context, "$who победили!", android.widget.Toast.LENGTH_LONG).show()
-                            gameOver = true
+                        if (winner(state) != null) {
+                            showWinBanner()
                         } else if (state.dice != null && !hasAnyLegalMove(state)) {
                             state = burnTurn(state)
                         }
@@ -342,6 +360,18 @@ class NardiBoardView @JvmOverloads constructor(
             }
             val mid = (txt.descent() + txt.ascent()) / 2f
             canvas.drawText(pt.count.toString(), cx, lastCy - mid, txt)
+        }
+        // ===== БАННЕР ПОБЕДЫ (поверх всего) =====
+        winBanner?.let { text ->
+            val w2 = width.toFloat(); val h2 = height.toFloat()
+            canvas.drawRect(0f, 0f, w2, h2, bannerBgPaint)   // затемнение
+            val parts = text.split("\n")
+            bannerTextPaint.textSize = w2 * 0.11f
+            bannerSubPaint.textSize = w2 * 0.08f
+            val cy = h2 / 2f
+            canvas.drawText(parts[0], w2 / 2f, cy - w2 * 0.04f, bannerTextPaint)
+            if (parts.size > 1)
+                canvas.drawText(parts[1], w2 / 2f, cy + w2 * 0.10f, bannerSubPaint)
         }
     }
 }
