@@ -85,4 +85,7 @@
     <string name="contact_err_dup">Этот ID уже в контактах</string>
     <string name="contact_err_self">Нельзя добавить свой собственный ID</string>
     <string name="contact_added">Контакт добавлен</string>
+    <string name="nardi_mode_title">Выберите режим</string>
+    <string name="nardi_mode_local">Вдвоём</string>
+    <string name="nardi_mode_bot">Против компьютера</string>
 </resources>
