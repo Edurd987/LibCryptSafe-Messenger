@@ -17,7 +17,8 @@ data class NardiGameState(
     val board: List<PointState>,  // ровно 24 пункта
     val dice: List<Int>?,         // оставшиеся зары (null = не брошены/ход завершён)
     val turn: PlayerType,         // чей ход
-    val headUsed: Boolean = false, // снята ли уже шашка с головы в этом ходу
+    val headCount: Int = 0,       // сколько шашек снято с головы в этом ходу
+    val isFirstTurn: Boolean = true, // самый первый ход партии (для дубля на голове)
     val isOpening: Boolean = true, // фаза розыгрыша первого хода
     val bornOffWhite: Int = 0,    // выброшено белых
     val bornOffBlack: Int = 0     // выброшено чёрных
@@ -34,7 +35,7 @@ fun initLongNardi(): NardiGameState {
         board = board,
         dice = null,
         turn = PlayerType.WHITE,  // белые ходят первыми
-        headUsed = false
+        headCount = 0
     )
 }
 
@@ -68,8 +69,8 @@ fun applyMove(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameSta
 
     // dice и turn пока не трогаем — это кирпичи следующих этапов
     val head = if (mover == PlayerType.WHITE) 23 else 11
-    val headUsed = state.headUsed || fromIndex == head
-    return state.copy(board = newBoard, headUsed = headUsed)
+    val headInc = if (fromIndex == head) 1 else 0
+    return state.copy(board = newBoard, headCount = state.headCount + headInc)
 }
 
 
@@ -163,7 +164,13 @@ fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     if (from.count <= 0 || from.player == PlayerType.NONE) return false
     if (from.player != state.turn) return false     // только своим цветом
     val head = if (from.player == PlayerType.WHITE) 23 else 11
-    if (fromIndex == head && state.headUsed) return false  // с головы только 1 за ход
+    if (fromIndex == head) {
+        // обычный лимит головы = 1; исключение: первый ход партии + дубль 6/4/3 = 2
+        val dieVal = state.dice.firstOrNull() ?: 0
+        val isSpecialDouble = state.dice.size >= 4 && dieVal in intArrayOf(6, 4, 3)
+        val headLimit = if (state.isFirstTurn && isSpecialDouble) 2 else 1
+        if (state.headCount >= headLimit) return false
+    }
     val to = state.board[toIndex]
     if (to.count > 0 && to.player != from.player) return false  // пункт занят соперником
     val dist = moveDistance(from.player, fromIndex, toIndex)
@@ -185,7 +192,7 @@ fun consumeDie(state: NardiGameState, dist: Int): NardiGameState {
     val remaining = dice.toMutableList().apply { removeAt(idx) }
     if (remaining.isEmpty()) {
         val next = if (state.turn == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
-        return state.copy(dice = null, turn = next, headUsed = false)  // ход сопернику, сброс головы
+        return state.copy(dice = null, turn = next, headCount = 0, isFirstTurn = false)  // ход сопернику
     }
     return state.copy(dice = remaining)
 }
@@ -209,7 +216,7 @@ fun hasAnyLegalMove(state: NardiGameState): Boolean {
 // Сжигает ход (нет легальных): сброс заров, передача сопернику.
 fun burnTurn(state: NardiGameState): NardiGameState {
     val next = if (state.turn == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
-    return state.copy(dice = null, turn = next, headUsed = false)
+    return state.copy(dice = null, turn = next, headCount = 0, isFirstTurn = false)
 }
 
 
