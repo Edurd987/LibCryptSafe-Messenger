@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
-    private val SERVER_URL = "ws://192.168.1.126:8080"
+    private val SERVER_URL = "wss://cryptsafe-relay.duckdns.org:8080"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
