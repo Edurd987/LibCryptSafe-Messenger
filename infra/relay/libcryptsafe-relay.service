@@ -1,0 +1,14 @@
+[Unit]
+Description=LibCryptSafe WebSocket Relay
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /root/server.js
+Restart=always
+RestartSec=3
+User=root
+WorkingDirectory=/root
+
+[Install]
+WantedBy=multi-user.target
