@@ -35,6 +35,9 @@ class MainActivity : AppCompatActivity() {
 
     private var webSocket: WebSocket? = null
     private var handshakeDone = false
+    // С кем сейчас диалог. Пока однодиалоговый режим -> "UNKNOWN".
+    // Кирпич 3 заменит на реальный ID из pubkey собеседника при handshake.
+    private var currentPeerId = "UNKNOWN"
     private var isConnected = false
     private var reconnectAttempts = 0
     private var intentionallyClosed = false
@@ -607,10 +610,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false) {
+    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId) {
         if (persist) {
             lifecycleScope.launch(Dispatchers.IO) {
-                db.messageDao().insert(MessageEntity(text = text, isOwn = isOwn))
+                db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
             }
         }
         val tv = TextView(this).apply {
