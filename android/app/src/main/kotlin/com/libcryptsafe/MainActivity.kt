@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private lateinit var db: AppDatabase
     private var myPubKey: ByteArray? = null
+    private var myStableId: String = ""      // мой постоянный ID (для обмена при handshake)
 
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -126,6 +127,7 @@ class MainActivity : AppCompatActivity() {
         loadHistory()
         // Стабильный ID клиента (постоянный, переживает перезапуски) — пока в лог
         val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)
+        myStableId = stableId
         android.util.Log.d("CRYPT_SAFE", "My Stable ID: $stableId")
         // Карточка ID в хабе 'Ещё': показать + копировать
         findViewById<TextView>(R.id.tv_my_id).text = stableId
@@ -484,6 +486,7 @@ class MainActivity : AppCompatActivity() {
                     val json = JSONObject()
                     json.put("type", "pubkey")
                     json.put("key", Base64.encodeToString(pub, Base64.NO_WRAP))
+                    json.put("senderId", myStableId)   // свой постоянный ID для привязки диалога
                     ws.send(json.toString())
                 }
             }
@@ -494,6 +497,10 @@ class MainActivity : AppCompatActivity() {
                     if (json.getString("type") == "pubkey") {
                         val peerPubKey = Base64.decode(
                             json.getString("key"), Base64.NO_WRAP)
+                        // Стабильный ID собеседника (он сам сообщает) -> привязка диалога.
+                        // Верификация "ID соответствует ключу" (подпись) — отдельный кирпич.
+                        val peerId = json.optString("senderId", "UNKNOWN")
+                        if (peerId.isNotEmpty() && peerId != "UNKNOWN") currentPeerId = peerId
 
                         // Вычисляем shared key
                         val result = CryptoManager.computeSharedKey(peerPubKey)

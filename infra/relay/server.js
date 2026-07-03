@@ -17,7 +17,7 @@ wss.on('connection', (socket, req) => {
     console.log(`[+] Connected: ${ip} | Total: ${clients.size}`)
     clients.forEach(other => {
         if (other !== socket && other.readyState === WebSocket.OPEN && other.pubKey) {
-            socket.send(JSON.stringify({ type: 'pubkey', key: other.pubKey }))
+            socket.send(JSON.stringify({ type: 'pubkey', key: other.pubKey, senderId: other.senderId }))
             console.log(`[KEY] Sent existing pubkey to new client`)
         }
     })
@@ -26,10 +26,11 @@ wss.on('connection', (socket, req) => {
             const msg = JSON.parse(data.toString())
             if (msg.type === 'pubkey') {
                 socket.pubKey = msg.key
+                socket.senderId = msg.senderId   // сохраняем ID для проброса
                 console.log(`[KEY] Received pubkey: ${msg.key.slice(0,16)}...`)
                 clients.forEach(client => {
                     if (client !== socket && client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({ type: 'pubkey', key: msg.key }))
+                        client.send(JSON.stringify({ type: 'pubkey', key: msg.key, senderId: msg.senderId }))
                     }
                 })
                 return
