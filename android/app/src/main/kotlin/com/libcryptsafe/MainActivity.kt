@@ -500,7 +500,10 @@ class MainActivity : AppCompatActivity() {
                         // Стабильный ID собеседника (он сам сообщает) -> привязка диалога.
                         // Верификация "ID соответствует ключу" (подпись) — отдельный кирпич.
                         val peerId = json.optString("senderId", "UNKNOWN")
-                        if (peerId.isNotEmpty() && peerId != "UNKNOWN") currentPeerId = peerId
+                        // игнорируем эхо своего же ID (relay шлёт наш pubkey обратно)
+                        if (peerId.isNotEmpty() && peerId != "UNKNOWN" && peerId != myStableId) {
+                            currentPeerId = peerId
+                        }
 
                         // Вычисляем shared key
                         val result = CryptoManager.computeSharedKey(peerPubKey)
