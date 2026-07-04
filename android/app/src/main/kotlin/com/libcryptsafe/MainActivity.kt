@@ -516,6 +516,27 @@ class MainActivity : AppCompatActivity() {
                                 addMessage(getString(R.string.can_send), isOwn = false)
                             }
                         }
+                        return
+                    }
+                    // К4: адресное сообщение — распаковка конверта {from,to,payload}
+                    if (json.getString("type") == "msg") {
+                        if (!handshakeDone) return
+                        val from = json.optString("from", "UNKNOWN")
+                        val payloadB64 = json.optString("payload", "")
+                        if (payloadB64.isEmpty()) return
+                        val cipherBytes = Base64.decode(payloadB64, Base64.NO_WRAP)
+                        if (cipherBytes.size > 64 * 1024) return   // DoS-лимит
+                        val decrypted = CryptoManager.decrypt(cipherBytes)
+                        runOnUiThread {
+                            if (decrypted == null) {
+                                addMessage(getString(R.string.decrypt_error), isOwn = false)
+                                return@runOnUiThread
+                            }
+                            // привязка к диалогу отправителя
+                            if (from != "UNKNOWN" && from.isNotEmpty()) currentPeerId = from
+                            handleIncoming(String(decrypted, Charsets.UTF_8))
+                        }
+                        return
                     }
                 } catch (e: Exception) {
                     // не JSON
@@ -600,10 +621,20 @@ class MainActivity : AppCompatActivity() {
             put("type", "CHAT")
             put("text", text)
         }.toString()
-        val encrypted = CryptoManager.encrypt(wrapper.toByteArray(Charsets.UTF_8))
-        if (encrypted != null) {
-            webSocket?.send(encrypted.toByteString())
-        }
+        sendEnvelope(wrapper)
+    }
+
+    // К4: упаковка зашифрованного контента в адресный конверт {type,to,payload}.
+    // to = текущий собеседник (currentPeerId). Relay доставит только ему.
+    private fun sendEnvelope(plainWrapper: String) {
+        val encrypted = CryptoManager.encrypt(plainWrapper.toByteArray(Charsets.UTF_8)) ?: return
+        val payloadB64 = Base64.encodeToString(encrypted, Base64.NO_WRAP)
+        val envelope = JSONObject().apply {
+            put("type", "msg")
+            put("to", currentPeerId)
+            put("payload", payloadB64)
+        }.toString()
+        webSocket?.send(envelope)
     }
 
     // Отправка игрового события (ход/игровой чат) в той же E2EE-обёртке
@@ -614,10 +645,7 @@ class MainActivity : AppCompatActivity() {
             put("gameId", gameId)
             put("payload", payload)
         }.toString()
-        val encrypted = CryptoManager.encrypt(wrapper.toByteArray(Charsets.UTF_8))
-        if (encrypted != null) {
-            webSocket?.send(encrypted.toByteString())
-        }
+        sendEnvelope(wrapper)
     }
 
     private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId) {

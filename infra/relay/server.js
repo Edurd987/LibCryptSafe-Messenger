@@ -35,13 +35,30 @@ wss.on('connection', (socket, req) => {
                 })
                 return
             }
-        } catch (e) {}
-        console.log(`[>] Message: ${data.length} bytes`)
-        clients.forEach(client => {
-            if (client !== socket && client.readyState === WebSocket.OPEN) {
-                client.send(data)
+            // ===  4: адресна€ доставка msg ===
+            if (msg.type === 'msg') {
+                const target = msg.to
+                if (!target) { console.log('[!] msg без to Ч дроп'); return }
+                // ищем получател€ среди подключЄнных по senderId
+                let delivered = false
+                clients.forEach(client => {
+                    if (client.senderId === target && client.readyState === WebSocket.OPEN) {
+                        // relay добавл€ет проверенный from из сокета отправител€
+                        client.send(JSON.stringify({
+                            type: 'msg',
+                            from: socket.senderId,
+                            to: target,
+                            payload: msg.payload
+                        }))
+                        delivered = true
+                    }
+                })
+                console.log(delivered ? `[>] msg ${socket.senderId}->${target}` : `[!] ${target} офлайн Ч дроп (очередь в  6)`)
+                return
             }
-        })
+        } catch (e) {}
+        // legacy: неопознанное Ч больше Ќ≈ broadcast (адресаци€ об€зательна)
+        console.log(`[?] неопознанный пакет ${data.length}b Ч игнор`)
     })
     socket.on('close', () => {
         clients.delete(socket)
