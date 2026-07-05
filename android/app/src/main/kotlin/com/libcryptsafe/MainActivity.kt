@@ -290,6 +290,14 @@ class MainActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = (8 * resources.displayMetrics.density).toInt() }
                 row.layoutParams = lp
+                // К5: тап по контакту -> открыть его диалог
+                val peer = c.contactId
+                val peerName = c.name
+                row.setOnClickListener {
+                    currentPeerId = peer
+                    loadHistory()                                // загрузить переписку этого контакта
+                    findViewById<TextView>(R.id.tab_chat).performClick()  // перейти на вкладку Чат
+                }
                 list.addView(row)
             }
         }
@@ -674,11 +682,19 @@ class MainActivity : AppCompatActivity() {
         scrollMessages.post { scrollMessages.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
+    // Загружает переписку ТЕКУЩЕГО диалога (currentPeerId), не всё подряд.
     private fun loadHistory() {
+        // диалог ещё не выбран -> показываем пусто
+        if (currentPeerId == "UNKNOWN" || currentPeerId.isEmpty()) {
+            containerMessages.removeAllViews()
+            return
+        }
+        val peer = currentPeerId
         lifecycleScope.launch {
-            val history = withContext(Dispatchers.IO) { db.messageDao().getAllOnce() }
+            val history = withContext(Dispatchers.IO) { db.messageDao().getMessagesForPeerOnce(peer) }
+            containerMessages.removeAllViews()   // очистить перед загрузкой диалога
             for (m in history) {
-                addMessage(m.text, m.isOwn, persist = false)
+                addMessage(m.text, m.isOwn, persist = false, peerId = peer)
             }
         }
     }
