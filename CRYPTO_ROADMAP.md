@@ -39,3 +39,40 @@ sendGameEvent уже есть). Можно сделать на текущем т
 ## ПРИНЦИП
 Не прыгать между задачами. X3DH -> аудит -> потом довески.
 Крипту делать медленно, с проверкой, возможно на аудированной библиотеке.
+
+## X3DH — РЕШЕНИЕ ПРИНЯТО: Путь 1 (свой на P-256)
+Разведка ядра завершена, маяки расставлены (07.07.2026).
+
+### ФАКТЫ О ЯДРЕ (где что лежит)
+- jni_bridge.cpp (android/app/src/main/cpp/) — JNI-мост, вызывает CryptoEngine
+- crypto_engine.hpp (LibCryptSafe/include/) — фасад: generate_keypair,
+  compute_shared_key, encrypt/decrypt (AES-GCM), get_fingerprint,
+  compute_confirmation. Session хранит aes_key + kex + handshake_done.
+- KeyExchange.hpp (MessengerApp/) — ДВИЖОК DH. Кривая P-256
+  (NID_X9_62_prime256v1), ключи DER 91б, KDF=SHA256(secret)->32б AES-256,
+  OPENSSL_cleanse, TOFU fingerprint, HMAC session confirmation.
+- CMakeLists подключает также Cryptor.cpp, local_mesh/direct_p2p/tor_tunnel
+  (TransportLayer) — статус НЕ проверен (заглушки?), НЕ трогаем пока.
+
+### ПОЧЕМУ Путь 1 (свой X3DH на P-256), НЕ libsignal
+- ядро уже на P-256, написано грамотно (RAII, cleanse, DER).
+- libsignal требует X25519 -> пришлось бы ЛОМАТЬ рабочий фундамент.
+- X3DH математически работает на P-256 (это DH-операции на кривой).
+- независимость от внешних зависимостей, прозрачность (важно для модели угроз).
+- надстройка поверх готового compute_shared_key, а не переписывание.
+
+### АРХИТЕКТУРА (намечена, детали — в дизайне)
+- KeyExchange -> низкоуровневый "движок DH" (не меняем логику)
+- новый SessionManager -> оркестрация X3DH поверх движка
+- хранение ключей (identity, signed prekey, one-time prekeys) в SQLCipher
+
+### СЛЕДУЮЩИЙ ШАГ (обязательно ДО кода!)
+ДЕТАЛЬНЫЙ ДИЗАЙН X3DH НА БУМАГЕ:
+- набор и ПОРЯДОК DH-операций (DH1..DH4) — свериться с эталоном Signal
+- KDF (HKDF над конкатенацией секретов, правильный info)
+- подпись signed prekey ключом identity (защита от MITM подмены prekey)
+- protocol с relay: публикация/раздача prekeys, исчерпание OPK
+- схема таблиц в SQLCipher
+- associated data, replay-защита
+НЕ КОДИТЬ до готовой спеки. Крипто-ошибка = уязвимость, не баг.
+Потом: реализация по спеке -> аудит через Kali.
