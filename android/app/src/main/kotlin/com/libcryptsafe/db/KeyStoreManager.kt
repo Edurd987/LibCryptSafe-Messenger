@@ -78,17 +78,26 @@ object KeyStoreManager {
         (ks.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let {
             return it.secretKey
         }
-        val keyGen = KeyGenerator.getInstance(
-            KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-        keyGen.init(
+        fun buildSpec(strongBox: Boolean) =
             KeyGenParameterSpec.Builder(
                 KEY_ALIAS,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
-                .build())
-        return keyGen.generateKey()
+                .apply { if (strongBox) setIsStrongBoxBacked(true) }
+                .build()
+
+        val keyGen = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        // Р2: пробуем StrongBox (выделенный чип), откат на обычный TEE
+        return try {
+            keyGen.init(buildSpec(strongBox = true))
+            keyGen.generateKey()
+        } catch (e: android.security.keystore.StrongBoxUnavailableException) {
+            keyGen.init(buildSpec(strongBox = false))
+            keyGen.generateKey()
+        }
     }
 
     // Стабильный ID клиента: SHA-256 от публичного EC-ключа из AndroidKeyStore.
