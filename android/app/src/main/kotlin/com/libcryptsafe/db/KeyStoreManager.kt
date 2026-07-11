@@ -100,6 +100,26 @@ object KeyStoreManager {
         }
     }
 
+    // ═══ X3DH Развилка 1: подпись через KeyStore (TEE) ═══
+    // Подписывает данные identity-ключом. SHA256withECDSA -> DER-подпись.
+    // Приватный ключ НЕ покидает TEE. Проверять будет OpenSSL (EVP_DigestVerify).
+    fun signData(data: ByteArray): ByteArray {
+        val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val entry = ks.getEntry(IDENTITY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+            ?: throw IllegalStateException("identity-ключ не найден в KeyStore")
+        val signer = java.security.Signature.getInstance("SHA256withECDSA")
+        signer.initSign(entry.privateKey)
+        signer.update(data)
+        return signer.sign()   // DER (ASN.1)
+    }
+
+    // Публичный identity-ключ в X.509 SubjectPublicKeyInfo (для OpenSSL d2i_PUBKEY)
+    fun getIdentityPublicKeyEncoded(context: Context): ByteArray {
+        val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        if (!ks.containsAlias(IDENTITY_ALIAS)) getOrCreateStableId(context)
+        return ks.getCertificate(IDENTITY_ALIAS).publicKey.encoded
+    }
+
     // Стабильный ID клиента: SHA-256 от публичного EC-ключа из AndroidKeyStore.
     // Ключ создаётся один раз и переживает перезапуски -> ID постоянный.
     // Назначение: идентификация/контакты. Подпись эфемерных ключей — отдельный заход.
