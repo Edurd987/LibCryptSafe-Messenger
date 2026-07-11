@@ -134,6 +134,48 @@ public:
         return out;
     }
 
+    // ═══ X3DH: сессионные ключи из DH-секретов (Развилки 3+4) ═══
+    // IKM = F(0xFF x32) || DH1 || DH2 || DH3 || [DH4]
+    // Порядок СТРОГИЙ. dh4 пустой -> graceful degradation (opk_id=null).
+    // Salt фиксированный (нули). Kenc/Kauth по разным info-меткам.
+    // MS не материализуется (Extract+Expand в одном вызове) -> FS.
+    struct SessionKeys {
+        std::vector<uint8_t> k_enc;   // AES-256-GCM
+        std::vector<uint8_t> k_auth;  // HMAC-SHA256
+    };
+
+    static SessionKeys derive_x3dh_session_keys(
+            const std::vector<uint8_t>& dh1,
+            const std::vector<uint8_t>& dh2,
+            const std::vector<uint8_t>& dh3,
+            const std::vector<uint8_t>& dh4 = {}) {
+
+        // каждый DH на P-256 = ровно 32 байта
+        if (dh1.size() != 32 || dh2.size() != 32 || dh3.size() != 32)
+            throw std::runtime_error("x3dh: DH1-DH3 must be 32 bytes each");
+        if (!dh4.empty() && dh4.size() != 32)
+            throw std::runtime_error("x3dh: DH4 must be 32 bytes or empty");
+
+        // IKM = F || DH1 || DH2 || DH3 || [DH4]
+        std::vector<uint8_t> ikm;
+        ikm.reserve(32 + 32 * 4);
+        ikm.insert(ikm.end(), 32, 0xFF);              // F: доменное разделение
+        ikm.insert(ikm.end(), dh1.begin(), dh1.end());
+        ikm.insert(ikm.end(), dh2.begin(), dh2.end());
+        ikm.insert(ikm.end(), dh3.begin(), dh3.end());
+        if (!dh4.empty())
+            ikm.insert(ikm.end(), dh4.begin(), dh4.end());
+
+        const std::vector<uint8_t> salt(32, 0x00);     // фиксированный salt
+
+        SessionKeys keys;
+        keys.k_enc  = hkdf_sha256(ikm, salt, "LibCryptSafe_v1_AES_GCM_Key", 32);
+        keys.k_auth = hkdf_sha256(ikm, salt, "LibCryptSafe_v1_HMAC_Key",   32);
+
+        OPENSSL_cleanse(ikm.data(), ikm.size());      // гигиена
+        return keys;
+    }
+
     // ── TOFU Fingerprint: SHA256(public_key_der) → HEX строка ──
     // Пользователи сравнивают эти строки голосом/QR-кодом
     std::string get_fingerprint() const {
