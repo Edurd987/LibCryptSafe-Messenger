@@ -3,6 +3,7 @@
 #include <openssl/ec.h>
 #include <openssl/sha.h>
 #include <openssl/hmac.h>
+#include <openssl/kdf.h>
 #include <openssl/x509.h>
 #include <openssl/crypto.h>
 #include <vector>
@@ -68,6 +69,69 @@ public:
         // Безопасное уничтожение секрета — не rand(), а специальная функция
         OPENSSL_cleanse(secret.data(), secret.size());
         return aes_key;
+    }
+
+    // ═══ X3DH: сырой DH-секрет (БЕЗ хеширования) ═══
+    // Старый compute_shared_key возвращает SHA256(secret) — для текущего
+    // handshake. X3DH требует СЫРЫЕ DH1..DH4 для конкатенации в IKM.
+    std::vector<uint8_t> compute_raw_dh(
+            const std::vector<uint8_t>& peer_pub_der) const {
+        const uint8_t* ptr = peer_pub_der.data();
+        auto peer = UniqPkey(
+            d2i_PUBKEY(nullptr, &ptr,
+                       static_cast<long>(peer_pub_der.size())));
+        if (!peer) throw std::runtime_error("compute_raw_dh: bad peer key");
+
+        auto ctx = UniqCtx(EVP_PKEY_CTX_new(pkey_.get(), nullptr));
+        if (!ctx) throw std::runtime_error("compute_raw_dh: CTX_new failed");
+        if (EVP_PKEY_derive_init(ctx.get()) != 1)
+            throw std::runtime_error("compute_raw_dh: derive_init failed");
+        if (EVP_PKEY_derive_set_peer(ctx.get(), peer.get()) != 1)
+            throw std::runtime_error("compute_raw_dh: set_peer failed");
+
+        size_t secret_len = 0;
+        if (EVP_PKEY_derive(ctx.get(), nullptr, &secret_len) != 1)
+            throw std::runtime_error("compute_raw_dh: size failed");
+
+        std::vector<uint8_t> secret(secret_len);
+        if (EVP_PKEY_derive(ctx.get(), secret.data(), &secret_len) != 1)
+            throw std::runtime_error("compute_raw_dh: derive failed");
+        secret.resize(secret_len);   // P-256 -> 32 байта
+        return secret;               // СЫРОЙ, вызывающий сам чистит
+    }
+
+    // ═══ X3DH: HKDF-SHA256 (RFC 5869) ═══
+    // Развилка 3: Extract-then-Expand. Заменяет SHA256(secret).
+    static std::vector<uint8_t> hkdf_sha256(
+            const std::vector<uint8_t>& ikm,
+            const std::vector<uint8_t>& salt,
+            const std::string& info,
+            size_t out_len) {
+
+        auto ctx = UniqCtx(EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr));
+        if (!ctx) throw std::runtime_error("hkdf: CTX_new_id failed");
+        if (EVP_PKEY_derive_init(ctx.get()) != 1)
+            throw std::runtime_error("hkdf: derive_init failed");
+        if (EVP_PKEY_CTX_set_hkdf_md(ctx.get(), EVP_sha256()) != 1)
+            throw std::runtime_error("hkdf: set_md failed");
+        if (EVP_PKEY_CTX_set1_hkdf_salt(
+                ctx.get(), salt.data(), static_cast<int>(salt.size())) != 1)
+            throw std::runtime_error("hkdf: set_salt failed");
+        if (EVP_PKEY_CTX_set1_hkdf_key(
+                ctx.get(), ikm.data(), static_cast<int>(ikm.size())) != 1)
+            throw std::runtime_error("hkdf: set_key failed");
+        if (EVP_PKEY_CTX_add1_hkdf_info(
+                ctx.get(),
+                reinterpret_cast<const uint8_t*>(info.data()),
+                static_cast<int>(info.size())) != 1)
+            throw std::runtime_error("hkdf: set_info failed");
+
+        std::vector<uint8_t> out(out_len);
+        size_t len = out_len;
+        if (EVP_PKEY_derive(ctx.get(), out.data(), &len) != 1)
+            throw std::runtime_error("hkdf: derive failed");
+        out.resize(len);
+        return out;
     }
 
     // ── TOFU Fingerprint: SHA256(public_key_der) → HEX строка ──
