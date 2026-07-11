@@ -176,6 +176,36 @@ public:
         return keys;
     }
 
+    // ═══ X3DH: проверка подписи SPK (Развилка 1) ═══
+    // Подписывает Android KeyStore (SHA256withECDSA -> DER),
+    // проверяет OpenSSL EVP_DigestVerify (ест DER нативно).
+    // pub_der = X.509 SubjectPublicKeyInfo (publicKey.encoded с Android).
+    // Объект подписи: SPK_pub || timestamp || key_id (собирает вызывающий).
+    static bool verify_signature(
+            const std::vector<uint8_t>& pub_der,     // X.509 identity Sign-ключа
+            const std::vector<uint8_t>& data,        // что подписывали
+            const std::vector<uint8_t>& sig_der) {   // подпись в DER
+
+        const uint8_t* ptr = pub_der.data();
+        auto pub = UniqPkey(
+            d2i_PUBKEY(nullptr, &ptr, static_cast<long>(pub_der.size())));
+        if (!pub) return false;   // не распарсили ключ -> не верим
+
+        auto md_ctx = UniqMdCtx(EVP_MD_CTX_new());
+        if (!md_ctx) return false;
+
+        if (EVP_DigestVerifyInit(
+                md_ctx.get(), nullptr, EVP_sha256(), nullptr, pub.get()) != 1)
+            return false;
+        if (EVP_DigestVerifyUpdate(md_ctx.get(), data.data(), data.size()) != 1)
+            return false;
+
+        // 1 = подпись верна, иначе (0 или <0) — нет. Не бросаем исключений.
+        int rc = EVP_DigestVerifyFinal(
+            md_ctx.get(), sig_der.data(), sig_der.size());
+        return rc == 1;
+    }
+
     // ── TOFU Fingerprint: SHA256(public_key_der) → HEX строка ──
     // Пользователи сравнивают эти строки голосом/QR-кодом
     std::string get_fingerprint() const {
@@ -220,6 +250,10 @@ private:
     struct CtxDeleter {
         void operator()(EVP_PKEY_CTX* p) const { EVP_PKEY_CTX_free(p); }
     };
+    struct MdCtxDeleter {
+        void operator()(EVP_MD_CTX* p) const { EVP_MD_CTX_free(p); }
+    };
+    using UniqMdCtx = std::unique_ptr<EVP_MD_CTX, MdCtxDeleter>;
     using UniqPkey = std::unique_ptr<EVP_PKEY,     PkeyDeleter>;
     using UniqCtx  = std::unique_ptr<EVP_PKEY_CTX, CtxDeleter>;
     UniqPkey pkey_;
