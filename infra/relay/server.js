@@ -1,8 +1,52 @@
 const fs = require('fs')
 const https = require('https')
 const WebSocket = require('ws')
+const Database = require('better-sqlite3')
 
 const DOMAIN = 'cryptsafe-relay.duckdns.org'
+const TTL_MS = 7 * 24 * 3600 * 1000   // 7 Ð´Ð½ÐµÐ¹
+
+// === Ðš6: Ð¾Ñ„Ð»Ð°Ð¹Ð½-Ð¾Ñ‡ÐµÑ€ÐµÐ´ÑŒ (SQLite) ===
+const db = new Database('/root/queue.db')
+db.pragma('journal_mode = WAL')
+db.exec(`CREATE TABLE IF NOT EXISTS queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recipient TEXT NOT NULL,
+  sender TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  ttl_expiry INTEGER NOT NULL
+)`)
+const qInsert = db.prepare('INSERT INTO queue (recipient,sender,payload,created_at,ttl_expiry) VALUES (?,?,?,?,?)')
+const qSelect = db.prepare('SELECT id,sender,payload FROM queue WHERE recipient=? ORDER BY created_at ASC')
+const qDelete = db.prepare('DELETE FROM queue WHERE id=?')
+const qCleanup = db.prepare('DELETE FROM queue WHERE ttl_expiry < ?')
+
+// TTL-Ñ‡Ð¸ÑÑ‚ÐºÐ° Ð¿Ñ€Ð¸ ÑÑ‚Ð°Ñ€Ñ‚Ðµ + Ñ€Ð°Ð· Ð² Ñ‡Ð°Ñ
+function cleanupTTL() {
+    const removed = qCleanup.run(Date.now()).changes
+    if (removed > 0) console.log(`[TTL] ÑƒÐ´Ð°Ð»ÐµÐ½Ð¾ Ð¿Ñ€Ð¾ÑÑ€Ð¾Ñ‡ÐµÐ½Ð½Ñ‹Ñ…: ${removed}`)
+}
+cleanupTTL()
+setInterval(cleanupTTL, 3600 * 1000)
+
+// Ð²Ñ‹Ð´Ð°Ñ‚ÑŒ Ð½Ð°ÐºÐ¾Ð¿Ð»ÐµÐ½Ð½Ð¾Ðµ Ð´Ð»Ñ recipient, ÑƒÐ´Ð°Ð»Ð¸Ñ‚ÑŒ Ð²Ñ‹Ð´Ð°Ð½Ð½Ð¾Ðµ
+function flushQueue(socket) {
+    const rows = qSelect.all(socket.senderId)
+    for (const row of rows) {
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                type: 'msg',
+                from: row.sender,
+                to: socket.senderId,
+                payload: row.payload
+            }))
+            qDelete.run(row.id)
+        }
+    }
+    if (rows.length > 0) console.log(`[QUEUE] Ð²Ñ‹Ð´Ð°Ð½Ð¾ ${socket.senderId}: ${rows.length}`)
+}
+
 const server = https.createServer({
     cert: fs.readFileSync(`/etc/letsencrypt/live/${DOMAIN}/fullchain.pem`),
     key: fs.readFileSync(`/etc/letsencrypt/live/${DOMAIN}/privkey.pem`)
@@ -18,7 +62,6 @@ wss.on('connection', (socket, req) => {
     clients.forEach(other => {
         if (other !== socket && other.readyState === WebSocket.OPEN && other.pubKey) {
             socket.send(JSON.stringify({ type: 'pubkey', key: other.pubKey, senderId: other.senderId }))
-            console.log(`[KEY] Sent existing pubkey to new client`)
         }
     })
     socket.on('message', (data) => {
@@ -26,24 +69,23 @@ wss.on('connection', (socket, req) => {
             const msg = JSON.parse(data.toString())
             if (msg.type === 'pubkey') {
                 socket.pubKey = msg.key
-                socket.senderId = msg.senderId   // ÑÐ¾Ñ…Ñ€Ð°Ð½ÑÐµÐ¼ ID Ð´Ð»Ñ Ð¿Ñ€Ð¾Ð±Ñ€Ð¾ÑÐ°
+                socket.senderId = msg.senderId
                 console.log(`[KEY] Received pubkey: ${msg.key.slice(0,16)}...`)
                 clients.forEach(client => {
                     if (client !== socket && client.readyState === WebSocket.OPEN) {
                         client.send(JSON.stringify({ type: 'pubkey', key: msg.key, senderId: msg.senderId }))
                     }
                 })
+                // Ðš6: ÐºÐ»Ð¸ÐµÐ½Ñ‚ Ð¿Ñ€ÐµÐ´ÑÑ‚Ð°Ð²Ð¸Ð»ÑÑ -> Ð²Ñ‹Ð´Ð°Ñ‚ÑŒ Ð½Ð°ÐºÐ¾Ð¿Ð»ÐµÐ½Ð½ÑƒÑŽ Ð¾Ñ‡ÐµÑ€ÐµÐ´ÑŒ
+                if (socket.senderId) flushQueue(socket)
                 return
             }
-            // === Ê4: àäðåñíàÿ äîñòàâêà msg ===
             if (msg.type === 'msg') {
                 const target = msg.to
-                if (!target) { console.log('[!] msg áåç to — äðîï'); return }
-                // èùåì ïîëó÷àòåëÿ ñðåäè ïîäêëþ÷¸ííûõ ïî senderId
+                if (!target) { console.log('[!] msg Ð±ÐµÐ· to â€” Ð´Ñ€Ð¾Ð¿'); return }
                 let delivered = false
                 clients.forEach(client => {
                     if (client.senderId === target && client.readyState === WebSocket.OPEN) {
-                        // relay äîáàâëÿåò ïðîâåðåííûé from èç ñîêåòà îòïðàâèòåëÿ
                         client.send(JSON.stringify({
                             type: 'msg',
                             from: socket.senderId,
@@ -53,12 +95,18 @@ wss.on('connection', (socket, req) => {
                         delivered = true
                     }
                 })
-                console.log(delivered ? `[>] msg ${socket.senderId}->${target}` : `[!] ${target} îôëàéí — äðîï (î÷åðåäü â Ê6)`)
+                if (delivered) {
+                    console.log(`[>] msg ${socket.senderId}->${target}`)
+                } else {
+                    // Ðš6: Ð¿Ð¾Ð»ÑƒÑ‡Ð°Ñ‚ÐµÐ»ÑŒ Ð¾Ñ„Ð»Ð°Ð¹Ð½ -> Ð² Ð¾Ñ‡ÐµÑ€ÐµÐ´ÑŒ
+                    const now = Date.now()
+                    qInsert.run(target, socket.senderId, msg.payload, now, now + TTL_MS)
+                    console.log(`[QUEUE] ${socket.senderId}->${target} Ð² Ð¾Ñ‡ÐµÑ€ÐµÐ´ÑŒ (Ð¾Ñ„Ð»Ð°Ð¹Ð½)`)
+                }
                 return
             }
         } catch (e) {}
-        // legacy: íåîïîçíàííîå — áîëüøå ÍÅ broadcast (àäðåñàöèÿ îáÿçàòåëüíà)
-        console.log(`[?] íåîïîçíàííûé ïàêåò ${data.length}b — èãíîð`)
+        console.log(`[?] Ð½ÐµÐ¾Ð¿Ð¾Ð·Ð½Ð°Ð½Ð½Ñ‹Ð¹ Ð¿Ð°ÐºÐµÑ‚ ${data.length}b â€” Ð¸Ð³Ð½Ð¾Ñ€`)
     })
     socket.on('close', () => {
         clients.delete(socket)
@@ -69,5 +117,5 @@ wss.on('connection', (socket, req) => {
 
 const PORT = 8080
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SERVER] Secure WSS relay running on wss://${DOMAIN}:${PORT}`)
+    console.log(`[SERVER] Secure WSS relay + offline queue running on wss://${DOMAIN}:${PORT}`)
 })
