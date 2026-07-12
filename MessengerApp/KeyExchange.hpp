@@ -29,6 +29,28 @@ public:
         pkey_.reset(raw);
     }
 
+    // ── Восстановление пары из сохранённого приватного ключа (DER) ──
+    // Для prekeys: сгенерили -> export_private_key -> SQLCipher ->
+    // позже KeyExchange(der) восстанавливает ту же пару.
+    explicit KeyExchange(const std::vector<uint8_t>& priv_der) {
+        const uint8_t* ptr = priv_der.data();
+        EVP_PKEY* raw = d2i_AutoPrivateKey(
+            nullptr, &ptr, static_cast<long>(priv_der.size()));
+        if (!raw) throw std::runtime_error("KeyExchange: bad private DER");
+        pkey_.reset(raw);
+    }
+
+    // ── Приватный ключ в DER (PKCS#8) — для хранения в SQLCipher ──
+    std::vector<uint8_t> export_private_key() const {
+        uint8_t* der = nullptr;
+        int len = i2d_PrivateKey(pkey_.get(), &der);
+        if (len <= 0) throw std::runtime_error("i2d_PrivateKey failed");
+        std::vector<uint8_t> result(der, der + len);
+        OPENSSL_cleanse(der, len);      // затираем перед освобождением
+        OPENSSL_free(der);
+        return result;
+    }
+
     // ── Публичный ключ в DER (91 байт для P-256) ──
     std::vector<uint8_t> export_public_key() const {
         uint8_t* der = nullptr;
