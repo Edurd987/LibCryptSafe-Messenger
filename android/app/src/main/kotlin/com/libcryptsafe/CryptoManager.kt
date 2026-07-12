@@ -7,6 +7,10 @@ object CryptoManager {
     }
 
     external fun generateKeypair(): ByteArray?
+
+    // X3DH: генерация prekey-пары. [0]=публичный (91б), [1]=приватный (121б).
+    // Stateless. SPK или OPK — решает вызывающий (PrekeyManager).
+    external fun generatePrekeyPair(): Array<ByteArray>?
     external fun computeSharedKey(peerPubKey: ByteArray): Int
     external fun encrypt(plaintext: ByteArray): ByteArray?
     external fun decrypt(ciphertext: ByteArray): ByteArray?

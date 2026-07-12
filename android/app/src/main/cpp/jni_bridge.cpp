@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "crypto_engine.hpp"
+#include "KeyExchange.hpp"
 
 static CryptoEngine::Session g_session;
 
@@ -18,6 +19,41 @@ Java_com_libcryptsafe_CryptoManager_generateKeypair(
     env->SetByteArrayRegion(arr, 0, static_cast<jsize>(pub_key.size()),
         reinterpret_cast<const jbyte*>(pub_key.data()));
     return arr;
+}
+
+// ═══ X3DH: генерация prekey-пары (STATELESS — не трогает g_session) ═══
+// Возвращает массив [0]=pub_der(91б), [1]=priv_der(121б).
+// Ядро "глупое": не знает, SPK это или OPK — решает Kotlin-оркестратор.
+JNIEXPORT jobjectArray JNICALL
+Java_com_libcryptsafe_CryptoManager_generatePrekeyPair(
+        JNIEnv* env, jobject) {
+    try {
+        Crypto::KeyExchange kx;                       // новая ECDH-пара P-256
+        std::vector<uint8_t> pub  = kx.export_public_key();
+        std::vector<uint8_t> priv = kx.export_private_key();
+
+        jclass byteArrCls = env->FindClass("[B");
+        if (!byteArrCls) return nullptr;
+        jobjectArray result = env->NewObjectArray(2, byteArrCls, nullptr);
+        if (!result) return nullptr;
+
+        jbyteArray jpub = env->NewByteArray(static_cast<jsize>(pub.size()));
+        env->SetByteArrayRegion(jpub, 0, static_cast<jsize>(pub.size()),
+            reinterpret_cast<const jbyte*>(pub.data()));
+        env->SetObjectArrayElement(result, 0, jpub);
+        env->DeleteLocalRef(jpub);
+
+        jbyteArray jpriv = env->NewByteArray(static_cast<jsize>(priv.size()));
+        env->SetByteArrayRegion(jpriv, 0, static_cast<jsize>(priv.size()),
+            reinterpret_cast<const jbyte*>(priv.data()));
+        env->SetObjectArrayElement(result, 1, jpriv);
+        env->DeleteLocalRef(jpriv);
+
+        OPENSSL_cleanse(priv.data(), priv.size());    // гигиена
+        return result;
+    } catch (const std::exception&) {
+        return nullptr;
+    }
 }
 
 JNIEXPORT jint JNICALL
