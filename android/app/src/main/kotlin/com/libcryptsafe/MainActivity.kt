@@ -129,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)
         myStableId = stableId
         android.util.Log.d("CRYPT_SAFE", "My Stable ID: $stableId")
+        }
         // Карточка ID в хабе 'Ещё': показать + копировать
         findViewById<TextView>(R.id.tv_my_id).text = stableId
         findViewById<Button>(R.id.btn_copy_id).setOnClickListener {
