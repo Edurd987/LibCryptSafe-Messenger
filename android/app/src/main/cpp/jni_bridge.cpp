@@ -56,6 +56,30 @@ Java_com_libcryptsafe_CryptoManager_generatePrekeyPair(
     }
 }
 
+// ═══ X3DH: проверка подписи SPK (stateless) ═══
+// pub_der = X.509 identity Sign-ключа (91б, с Android KeyStore)
+// data = объект подписи (SPK_pub ‖ timestamp ‖ key_id = 103б)
+// sig_der = DER-подпись из KeyStore (~71-72б)
+JNIEXPORT jboolean JNICALL
+Java_com_libcryptsafe_CryptoManager_verifySignature(
+        JNIEnv* env, jobject,
+        jbyteArray pub_der, jbyteArray data, jbyteArray sig_der) {
+    try {
+        auto toVec = [&](jbyteArray arr) {
+            jsize len = env->GetArrayLength(arr);
+            std::vector<uint8_t> v(len);
+            env->GetByteArrayRegion(arr, 0, len,
+                reinterpret_cast<jbyte*>(v.data()));
+            return v;
+        };
+        bool ok = Crypto::KeyExchange::verify_signature(
+            toVec(pub_der), toVec(data), toVec(sig_der));
+        return ok ? JNI_TRUE : JNI_FALSE;
+    } catch (const std::exception&) {
+        return JNI_FALSE;   // ошибка = не доверяем
+    }
+}
+
 JNIEXPORT jint JNICALL
 Java_com_libcryptsafe_CryptoManager_computeSharedKey(
         JNIEnv* env, jobject, jbyteArray peer_pub_key) {
