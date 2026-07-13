@@ -22,6 +22,31 @@ const qSelect = db.prepare('SELECT id,sender,payload FROM queue WHERE recipient=
 const qDelete = db.prepare('DELETE FROM queue WHERE id=?')
 const qCleanup = db.prepare('DELETE FROM queue WHERE ttl_expiry < ?')
 
+// === P4: prekeys (X3DH) — в той же queue.db ===
+db.exec(`CREATE TABLE IF NOT EXISTS prekeys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recipient TEXT NOT NULL,
+  key_type TEXT NOT NULL,
+  key_id INTEGER NOT NULL,
+  key_value TEXT NOT NULL,
+  signature TEXT,
+  created_at INTEGER NOT NULL
+)`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_prekeys_recipient ON prekeys(recipient)')
+
+// upload: relay = глупая почта, подписи НЕ проверяет
+const pkInsert = db.prepare(
+  'INSERT INTO prekeys (recipient,key_type,key_id,key_value,signature,created_at) VALUES (?,?,?,?,?,?)')
+// при повторной публикации SPK/IK — заменяем старые (personality стабильна)
+const pkDeleteType = db.prepare('DELETE FROM prekeys WHERE recipient=? AND key_type=?')
+// request: IK и SPK не удаляются
+const pkGetIK  = db.prepare("SELECT key_value FROM prekeys WHERE recipient=? AND key_type='IK' LIMIT 1")
+const pkGetSPK = db.prepare("SELECT key_value,signature,key_id FROM prekeys WHERE recipient=? AND key_type='SPK' LIMIT 1")
+// OPK: атомарный выбор+удаление (one-time, без окна гонки)
+const pkTakeOPK = db.prepare(
+  "DELETE FROM prekeys WHERE id=(SELECT id FROM prekeys WHERE recipient=? AND key_type='OPK' LIMIT 1) RETURNING key_id,key_value")
+const pkCountOPK = db.prepare("SELECT COUNT(*) AS n FROM prekeys WHERE recipient=? AND key_type='OPK'")
+
 // TTL-чистка при старте + раз в час
 function cleanupTTL() {
     const removed = qCleanup.run(Date.now()).changes
@@ -80,6 +105,41 @@ wss.on('connection', (socket, req) => {
                 if (socket.senderId) flushQueue(socket)
                 return
             }
+            if (msg.type === 'prekeys_upload') {
+                // публичная связка Боба: {senderId, keys:[{type,id,value,sig?}]}
+                const owner = msg.senderId
+                if (!owner || !Array.isArray(msg.keys)) return
+                const now = Date.now()
+                // IK/SPK заменяем (стабильны), OPK добавляем в пул
+                const insertAll = db.transaction(() => {
+                    for (const k of msg.keys) {
+                        if (k.type === 'IK' || k.type === 'SPK') pkDeleteType.run(owner, k.type)
+                        pkInsert.run(owner, k.type, k.id|0, k.value, k.sig || null, now)
+                    }
+                })
+                insertAll()
+                // no-log на диск (митигация слежки): только счётчик в памяти
+                console.log(`[PREKEY] upload ${owner}: ${msg.keys.length} ключей`)
+                return
+            }
+
+            if (msg.type === 'prekeys_request') {
+                const target = msg.targetId
+                if (!target) return
+                const ik  = pkGetIK.get(target)
+                const spk = pkGetSPK.get(target)
+                const opk = pkTakeOPK.get(target)   // атомарно берёт+удаляет, или undefined
+                socket.send(JSON.stringify({
+                    type: 'prekeys_response',
+                    targetId: target,
+                    ik:  ik  ? ik.key_value : null,
+                    spk: spk ? { value: spk.key_value, sig: spk.signature, keyId: spk.key_id } : null,
+                    opk: opk ? { id: opk.key_id, value: opk.key_value } : null
+                }))
+                console.log(`[PREKEY] request ${target}: opk=${opk ? 'выдан' : 'НЕТ'}`)
+                return
+            }
+
             if (msg.type === 'msg') {
                 const target = msg.to
                 if (!target) { console.log('[!] msg без to — дроп'); return }
