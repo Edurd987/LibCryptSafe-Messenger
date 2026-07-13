@@ -77,6 +77,44 @@ object PrekeyManager {
         }
     }
 
+    // Собирает JSON публичной связки для relay (prekeys_upload).
+    // ТОЛЬКО публичные части (publicKey), НИКОГДА privateKey.
+    // key_id берём ИЗ БД как есть (единый источник — иначе рассинхрон с Бобом).
+    suspend fun buildUploadJson(context: Context, senderId: String): String {
+        val dao = AppDatabase.getInstance(context).prekeyDao()
+        val b64 = { b: ByteArray -> android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP) }
+        val keys = org.json.JSONArray()
+
+        // IK — identity из KeyStore (публичный, X.509)
+        val ikPub = KeyStoreManager.getIdentityPublicKeyEncoded(context)
+        keys.put(org.json.JSONObject().apply {
+            put("type", "IK"); put("id", 0); put("value", b64(ikPub))
+        })
+
+        // SPK — публичная часть + подпись, реальный keyId
+        dao.getCurrentSpk()?.let { spk ->
+            keys.put(org.json.JSONObject().apply {
+                put("type", "SPK"); put("id", spk.keyId)
+                put("value", b64(spk.publicKey))
+                put("sig", spk.signature?.let { b64(it) })
+            })
+        }
+
+        // OPK — только публичные части, реальные keyId из БД
+        for (opk in dao.getAllOpk()) {
+            keys.put(org.json.JSONObject().apply {
+                put("type", "OPK"); put("id", opk.keyId)
+                put("value", b64(opk.publicKey))
+            })
+        }
+
+        return org.json.JSONObject().apply {
+            put("type", "prekeys_upload")
+            put("senderId", senderId)
+            put("keys", keys)
+        }.toString()
+    }
+
     // Диагностика: сколько ключей в наличии
     suspend fun status(context: Context): String {
         val dao = AppDatabase.getInstance(context).prekeyDao()

@@ -506,6 +506,19 @@ class MainActivity : AppCompatActivity() {
                     json.put("senderId", myStableId)   // свой постоянный ID для привязки диалога
                     ws.send(json.toString())
                 }
+                // X3DH: публикуем связку prekeys (тот же senderId — relay свяжет
+                // identity с ключами). Публичные части, приватные остаются в БД.
+                myStableId?.let { sid ->
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        try {
+                            val uploadJson = PrekeyManager.buildUploadJson(this@MainActivity, sid)
+                            ws.send(uploadJson)
+                            android.util.Log.d("PREKEY_MGR", "связка prekeys опубликована на relay")
+                        } catch (e: Exception) {
+                            android.util.Log.e("PREKEY_MGR", "публикация: ${e.message}")
+                        }
+                    }
+                }
             }
 
             override fun onMessage(ws: WebSocket, text: String) {
