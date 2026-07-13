@@ -129,6 +129,15 @@ class MainActivity : AppCompatActivity() {
         val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)
         myStableId = stableId
         android.util.Log.d("CRYPT_SAFE", "My Stable ID: $stableId")
+        // X3DH: инициализация prekeys (идемпотентно). Использует identity-ключ
+        // из KeyStore (не myPubKey!). На IO — генерация 50 ключей + TEE-подпись.
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                PrekeyManager.bootstrap(this@MainActivity)
+            } catch (e: Exception) {
+                android.util.Log.e("PREKEY_MGR", "bootstrap: ${e.message}")
+            }
+        }
         // Карточка ID в хабе 'Ещё': показать + копировать
         findViewById<TextView>(R.id.tv_my_id).text = stableId
         findViewById<Button>(R.id.btn_copy_id).setOnClickListener {
