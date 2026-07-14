@@ -12,6 +12,17 @@ object CryptoManager {
     // Stateless. SPK или OPK — решает вызывающий (PrekeyManager).
     external fun generatePrekeyPair(): Array<ByteArray>?
 
+    // X3DH (роль Алисы-инициатора). Stateless.
+    // Вход: наш IK_DH приватный (из SQLCipher), публичные Боба с relay.
+    // peerOpk = null -> graceful degradation (DH1-DH3).
+    // Выход: [0]=Kenc, [1]=Kauth, [2]=EK_pub (в первое сообщение).
+    external fun x3dhInitiator(
+        ourIkDhPriv: ByteArray,
+        peerIkDh: ByteArray,
+        peerSpk: ByteArray,
+        peerOpk: ByteArray?
+    ): Array<ByteArray>?
+
     // X3DH: проверка подписи SPK (ECDSA P-256, DER). Stateless.
     // Алиса проверяет связку Боба перед построением сессии (защита от MITM).
     external fun verifySignature(

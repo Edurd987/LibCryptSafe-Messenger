@@ -80,6 +80,51 @@ Java_com_libcryptsafe_CryptoManager_verifySignature(
     }
 }
 
+// ═══ X3DH инициатор (Алиса): 4 DH + деривация. STATELESS ═══
+// Вход: наш IK_DH priv (DER), публичные Боба: IK_DH, SPK, OPK (или null).
+// Выход: [0]=Kenc(32), [1]=Kauth(32), [2]=EK_pub(91) для первого сообщения.
+// Эфемерный приватный ключ генерится и умирает внутри C++.
+JNIEXPORT jobjectArray JNICALL
+Java_com_libcryptsafe_CryptoManager_x3dhInitiator(
+        JNIEnv* env, jobject,
+        jbyteArray our_ik_dh_priv, jbyteArray peer_ik_dh,
+        jbyteArray peer_spk, jbyteArray peer_opk) {
+    try {
+        auto toVec = [&](jbyteArray arr) -> std::vector<uint8_t> {
+            if (arr == nullptr) return {};
+            jsize len = env->GetArrayLength(arr);
+            std::vector<uint8_t> v(len);
+            env->GetByteArrayRegion(arr, 0, len,
+                reinterpret_cast<jbyte*>(v.data()));
+            return v;
+        };
+
+        auto ik_priv = toVec(our_ik_dh_priv);
+        auto result = Crypto::KeyExchange::x3dh_initiator(
+            ik_priv, toVec(peer_ik_dh), toVec(peer_spk), toVec(peer_opk));
+        OPENSSL_cleanse(ik_priv.data(), ik_priv.size());   // гигиена
+
+        jclass byteArrCls = env->FindClass("[B");
+        if (!byteArrCls) return nullptr;
+        jobjectArray out = env->NewObjectArray(3, byteArrCls, nullptr);
+        if (!out) return nullptr;
+
+        auto put = [&](int idx, std::vector<uint8_t>& v) {
+            jbyteArray a = env->NewByteArray(static_cast<jsize>(v.size()));
+            env->SetByteArrayRegion(a, 0, static_cast<jsize>(v.size()),
+                reinterpret_cast<const jbyte*>(v.data()));
+            env->SetObjectArrayElement(out, idx, a);
+            env->DeleteLocalRef(a);
+        };
+        put(0, result.k_enc);
+        put(1, result.k_auth);
+        put(2, result.ek_pub);
+        return out;
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
 JNIEXPORT jint JNICALL
 Java_com_libcryptsafe_CryptoManager_computeSharedKey(
         JNIEnv* env, jobject, jbyteArray peer_pub_key) {
