@@ -168,7 +168,11 @@ wss.on('connection', (socket, req) => {
                 }
                 return
             }
-        } catch (e) {}
+        } catch (e) {
+            // лог ошибки (stderr, только в journald — не пользователю, БЕЗ данных сообщения)
+            const t = (typeof msg !== 'undefined' && msg && msg.type) ? msg.type : 'parse_error'
+            console.error(`[MSG_ERROR] type=${t}: ${e.message}`)
+        }
         console.log(`[?] неопознанный пакет ${data.length}b — игнор`)
     })
     socket.on('close', () => {
