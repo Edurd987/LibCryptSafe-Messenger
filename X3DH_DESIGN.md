@@ -358,3 +358,31 @@ Big-endian (сетевой порядок).
 - НЕ скрываем метаданные соединения (время, длительность, объём).
 - Маскировка от DPI (обфускация, onion, domain fronting) = ОТДЕЛЬНАЯ
   будущая задача (RETICULUM_FUTURE), НЕ входит в P4.
+
+## УТОЧНЕНИЕ Развилки 1 (реализация identity как пары) — перед SessionManager
+Обнаружено при дизайне SessionManager: IK для DH ещё не создавался.
+bootstrap делал только SPK+OPK. "IK" на relay = Sign-ключ (не умеет ECDH).
+
+### Identity = ДВЕ функциональные сущности
+- IK_SIGN (в KeyStore/TEE, PURPOSE_SIGN): подписывает SPK. Приватная часть
+  неизвлекаема. Из него же stableId. Алиса проверяет им подпись SPK Боба.
+- IK_DH (в SQLCipher, ECDH-пара P-256): участвует в DH1, DH2. Приватная
+  часть в зашифрованной БД (KeyStore не даёт sign-ключ для ECDH).
+
+### На relay публикуем ОБА (иначе Алиса не сможет И проверить, И посчитать DH)
+- ik_dh:   публичный ECDH-ключ (для DH1, DH2)
+- ik_sign: публичный ECDSA-ключ (для проверки подписи SPK)
+- spk + подпись, opk пачка
+
+### DH-формулы (из работающего test_x3dh_symmetry.cpp — НЕ менять!)
+DH1 = IK_A_dh ↔ SPK_B    (identity Алисы <-> signed prekey Боба)
+DH2 = EK_A    ↔ IK_B_dh  (эфемерный Алисы <-> identity Боба)
+DH3 = EK_A    ↔ SPK_B
+DH4 = EK_A    ↔ OPK_B
+ВНИМАНИЕ: DH1 = IK_A ↔ SPK_B (НЕ IK_A ↔ IK_B!). Частая ошибка.
+
+### План правок до SessionManager
+1. bootstrap: генерить IK_DH (ECDH), приватную в SQLCipher (keyType="IK_DH").
+2. buildUploadJson: публиковать ik_dh И ik_sign отдельно.
+3. relay: принимать оба типа.
+4. JNI deriveX3DHKeys(peer_ik_dh, peer_spk, peer_opk, our_ik_dh_priv, our_ek_priv).

@@ -22,3 +22,5 @@ relay/^C
 *_BACKUP.kt
 *_BACKUP.xml
 *_BACKUP
+*.bak_*
+*.bak
