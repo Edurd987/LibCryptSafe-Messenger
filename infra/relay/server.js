@@ -40,7 +40,8 @@ const pkInsert = db.prepare(
 // при повторной публикации SPK/IK — заменяем старые (personality стабильна)
 const pkDeleteType = db.prepare('DELETE FROM prekeys WHERE recipient=? AND key_type=?')
 // request: IK и SPK не удаляются
-const pkGetIK  = db.prepare("SELECT key_value FROM prekeys WHERE recipient=? AND key_type='IK' LIMIT 1")
+const pkGetIkSign = db.prepare("SELECT key_value FROM prekeys WHERE recipient=? AND key_type='IK_SIGN' LIMIT 1")
+const pkGetIkDh   = db.prepare("SELECT key_value FROM prekeys WHERE recipient=? AND key_type='IK_DH' LIMIT 1")
 const pkGetSPK = db.prepare("SELECT key_value,signature,key_id FROM prekeys WHERE recipient=? AND key_type='SPK' LIMIT 1")
 // OPK: атомарный выбор+удаление (one-time, без окна гонки)
 const pkTakeOPK = db.prepare(
@@ -126,13 +127,15 @@ wss.on('connection', (socket, req) => {
             if (msg.type === 'prekeys_request') {
                 const target = msg.targetId
                 if (!target) return
-                const ik  = pkGetIK.get(target)
+                const ikSign = pkGetIkSign.get(target)   // для проверки подписи SPK
+                const ikDh   = pkGetIkDh.get(target)     // для DH1/DH2
                 const spk = pkGetSPK.get(target)
                 const opk = pkTakeOPK.get(target)   // атомарно берёт+удаляет, или undefined
                 socket.send(JSON.stringify({
                     type: 'prekeys_response',
                     targetId: target,
-                    ik:  ik  ? ik.key_value : null,
+                    ik_sign: ikSign ? ikSign.key_value : null,
+                    ik_dh:   ikDh   ? ikDh.key_value   : null,
                     spk: spk ? { value: spk.key_value, sig: spk.signature, keyId: spk.key_id } : null,
                     opk: opk ? { id: opk.key_id, value: opk.key_value } : null
                 }))

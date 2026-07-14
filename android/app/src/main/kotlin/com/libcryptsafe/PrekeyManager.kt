@@ -99,11 +99,19 @@ object PrekeyManager {
         val b64 = { b: ByteArray -> android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP) }
         val keys = org.json.JSONArray()
 
-        // IK — identity из KeyStore (публичный, X.509)
-        val ikPub = KeyStoreManager.getIdentityPublicKeyEncoded(context)
+        // IK_SIGN — из KeyStore (ECDSA, для проверки подписи SPK Алисой)
+        val ikSignPub = KeyStoreManager.getIdentityPublicKeyEncoded(context)
         keys.put(org.json.JSONObject().apply {
-            put("type", "IK"); put("id", 0); put("value", b64(ikPub))
+            put("type", "IK_SIGN"); put("id", 0); put("value", b64(ikSignPub))
         })
+
+        // IK_DH — из SQLCipher (ECDH, для DH1/DH2)
+        dao.getPrekeyById("IK_DH", IK_DH_KEY_ID)?.let { ikdh ->
+            keys.put(org.json.JSONObject().apply {
+                put("type", "IK_DH"); put("id", ikdh.keyId)
+                put("value", b64(ikdh.publicKey))
+            })
+        }
 
         // SPK — публичная часть + подпись, реальный keyId
         dao.getCurrentSpk()?.let { spk ->
