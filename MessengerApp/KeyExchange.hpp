@@ -228,6 +228,48 @@ public:
         return rc == 1;
     }
 
+    // ═══ X3DH инициатор (Алиса): 4 DH + деривация ═══
+    // Генерит эфемерный EK внутри. Считает DH1-DH4 по формулам из
+    // test_x3dh_symmetry.cpp. Возвращает {Kenc, Kauth, EK_pub}.
+    // our_ik_dh_priv — наш identity-DH (приватный DER).
+    // peer_* — публичные ключи Боба (DER). peer_opk пустой -> DH1-DH3.
+    struct InitiatorResult {
+        std::vector<uint8_t> k_enc;
+        std::vector<uint8_t> k_auth;
+        std::vector<uint8_t> ek_pub;   // уходит в первое сообщение
+    };
+
+    static InitiatorResult x3dh_initiator(
+            const std::vector<uint8_t>& our_ik_dh_priv,
+            const std::vector<uint8_t>& peer_ik_dh_pub,
+            const std::vector<uint8_t>& peer_spk_pub,
+            const std::vector<uint8_t>& peer_opk_pub = {}) {
+
+        // наш identity-DH из приватного DER
+        KeyExchange ik_dh(our_ik_dh_priv);
+        // эфемерный EK — генерится здесь, приватная часть не покидает C++
+        KeyExchange ek;
+
+        // DH по формулам из работающего теста (НЕ менять порядок!)
+        auto dh1 = ik_dh.compute_raw_dh(peer_spk_pub);   // IK_A ↔ SPK_B
+        auto dh2 = ek.compute_raw_dh(peer_ik_dh_pub);    // EK_A ↔ IK_B
+        auto dh3 = ek.compute_raw_dh(peer_spk_pub);      // EK_A ↔ SPK_B
+
+        SessionKeys keys;
+        if (peer_opk_pub.empty()) {
+            keys = derive_x3dh_session_keys(dh1, dh2, dh3);            // DH1-DH3
+        } else {
+            auto dh4 = ek.compute_raw_dh(peer_opk_pub);  // EK_A ↔ OPK_B
+            keys = derive_x3dh_session_keys(dh1, dh2, dh3, dh4);       // DH1-DH4
+        }
+
+        InitiatorResult r;
+        r.k_enc  = keys.k_enc;
+        r.k_auth = keys.k_auth;
+        r.ek_pub = ek.export_public_key();
+        return r;
+    }
+
     // ── TOFU Fingerprint: SHA256(public_key_der) → HEX строка ──
     // Пользователи сравнивают эти строки голосом/QR-кодом
     std::string get_fingerprint() const {
