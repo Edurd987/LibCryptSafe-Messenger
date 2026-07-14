@@ -12,6 +12,7 @@ object PrekeyManager {
 
     const val OPK_BATCH = 50           // размер пачки (Развилка: 50)
     const val SPK_KEY_ID = 1           // SPK один, фиксированный id
+    const val IK_DH_KEY_ID = 0         // identity DH-ключ, один
 
     // Собирает объект подписи SPK: SPK_pub(91) || timestamp(8,BE) || key_id(4,BE) = 103б
     // Формат зафиксирован в X3DH_DESIGN.md. Обе стороны собирают одинаково.
@@ -27,6 +28,19 @@ object PrekeyManager {
     // Existующее НЕ трогает. Вызывать при старте приложения.
     suspend fun bootstrap(context: Context) {
         val dao = AppDatabase.getInstance(context).prekeyDao()
+
+        // 0. IK_DH — долгосрочный identity-DH (DH1/DH2). Создаём один раз.
+        //    Приватная в SQLCipher (KeyStore не даёт sign-ключ для ECDH).
+        if (dao.getPrekeyById("IK_DH", IK_DH_KEY_ID) == null) {
+            val pair = CryptoManager.generatePrekeyPair()
+                ?: throw IllegalStateException("IK_DH: генерация не удалась")
+            dao.insert(PrekeyEntity(
+                keyType = "IK_DH", keyId = IK_DH_KEY_ID,
+                privateKey = pair[1], publicKey = pair[0],
+                signature = null, timestamp = System.currentTimeMillis()
+            ))
+            android.util.Log.d("PREKEY_MGR", "IK_DH создан")  // факт, БЕЗ ключа
+        }
 
         // 1. SPK — создаём, только если его нет
         if (dao.getCurrentSpk() == null) {

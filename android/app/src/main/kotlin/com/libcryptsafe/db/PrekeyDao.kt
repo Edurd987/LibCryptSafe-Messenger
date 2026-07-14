@@ -12,6 +12,10 @@ interface PrekeyDao {
     @Insert
     suspend fun insertAll(prekeys: List<PrekeyEntity>)
 
+    // универсальная выборка по типу+id (для IK_DH и пр.)
+    @Query("SELECT * FROM prekeys WHERE keyType=:type AND keyId=:id LIMIT 1")
+    suspend fun getPrekeyById(type: String, id: Int): PrekeyEntity?
+
     // текущий SPK (последний по timestamp)
     @Query("SELECT * FROM prekeys WHERE keyType='SPK' ORDER BY timestamp DESC LIMIT 1")
     suspend fun getCurrentSpk(): PrekeyEntity?
