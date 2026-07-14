@@ -270,6 +270,33 @@ public:
         return r;
     }
 
+    // ═══ X3DH получатель (Боб): повтор 4 DH из первого сообщения ═══
+    // Принимает EK_A_pub, IK_A_pub (из сообщения) + свои приватные
+    // (IK_DH, SPK, OPK). Считает b_dh по формулам из test_x3dh_symmetry.cpp
+    // -> тот же SK, что у Алисы. opk_priv пустой -> DH1-DH3.
+    static SessionKeys x3dh_responder(
+            const std::vector<uint8_t>& our_ik_dh_priv,
+            const std::vector<uint8_t>& our_spk_priv,
+            const std::vector<uint8_t>& peer_ik_dh_pub,
+            const std::vector<uint8_t>& peer_ek_pub,
+            const std::vector<uint8_t>& our_opk_priv = {}) {
+
+        KeyExchange ik_dh(our_ik_dh_priv);
+        KeyExchange spk(our_spk_priv);
+
+        // b_dh (зеркало a_dh, коммутативность -> тот же секрет):
+        auto dh1 = spk.compute_raw_dh(peer_ik_dh_pub);   // SPK_B ↔ IK_A
+        auto dh2 = ik_dh.compute_raw_dh(peer_ek_pub);    // IK_B ↔ EK_A
+        auto dh3 = spk.compute_raw_dh(peer_ek_pub);      // SPK_B ↔ EK_A
+
+        if (our_opk_priv.empty()) {
+            return derive_x3dh_session_keys(dh1, dh2, dh3);           // DH1-DH3
+        }
+        KeyExchange opk(our_opk_priv);
+        auto dh4 = opk.compute_raw_dh(peer_ek_pub);      // OPK_B ↔ EK_A
+        return derive_x3dh_session_keys(dh1, dh2, dh3, dh4);          // DH1-DH4
+    }
+
     // ── TOFU Fingerprint: SHA256(public_key_der) → HEX строка ──
     // Пользователи сравнивают эти строки голосом/QR-кодом
     std::string get_fingerprint() const {
