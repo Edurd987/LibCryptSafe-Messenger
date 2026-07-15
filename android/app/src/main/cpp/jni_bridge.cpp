@@ -125,6 +125,52 @@ Java_com_libcryptsafe_CryptoManager_x3dhInitiator(
     }
 }
 
+// ═══ X3DH получатель (Боб): повтор 4 DH из первого сообщения. STATELESS ═══
+// Вход: наши IK_DH, SPK приватные + IK_A, EK_A из сообщения + наш OPK (null->DH1-DH3).
+// Выход: [0]=Kenc(32), [1]=Kauth(32). EK не генерим — он от Алисы.
+JNIEXPORT jobjectArray JNICALL
+Java_com_libcryptsafe_CryptoManager_x3dhResponder(
+        JNIEnv* env, jobject,
+        jbyteArray our_ik_dh_priv, jbyteArray our_spk_priv,
+        jbyteArray peer_ik_dh, jbyteArray peer_ek, jbyteArray our_opk_priv) {
+    try {
+        auto toVec = [&](jbyteArray arr) -> std::vector<uint8_t> {
+            if (arr == nullptr) return {};
+            jsize len = env->GetArrayLength(arr);
+            std::vector<uint8_t> v(len);
+            env->GetByteArrayRegion(arr, 0, len,
+                reinterpret_cast<jbyte*>(v.data()));
+            return v;
+        };
+
+        auto ik_priv  = toVec(our_ik_dh_priv);
+        auto spk_priv = toVec(our_spk_priv);
+        auto opk_priv = toVec(our_opk_priv);
+        auto keys = Crypto::KeyExchange::x3dh_responder(
+            ik_priv, spk_priv, toVec(peer_ik_dh), toVec(peer_ek), opk_priv);
+        OPENSSL_cleanse(ik_priv.data(), ik_priv.size());   // гигиена
+        OPENSSL_cleanse(spk_priv.data(), spk_priv.size());
+        if (!opk_priv.empty()) OPENSSL_cleanse(opk_priv.data(), opk_priv.size());
+
+        jclass byteArrCls = env->FindClass("[B");
+        if (!byteArrCls) return nullptr;
+        jobjectArray out = env->NewObjectArray(2, byteArrCls, nullptr);
+        if (!out) return nullptr;
+        auto put = [&](int idx, std::vector<uint8_t>& v) {
+            jbyteArray a = env->NewByteArray(static_cast<jsize>(v.size()));
+            env->SetByteArrayRegion(a, 0, static_cast<jsize>(v.size()),
+                reinterpret_cast<const jbyte*>(v.data()));
+            env->SetObjectArrayElement(out, idx, a);
+            env->DeleteLocalRef(a);
+        };
+        put(0, keys.k_enc);
+        put(1, keys.k_auth);
+        return out;
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
 JNIEXPORT jint JNICALL
 Java_com_libcryptsafe_CryptoManager_computeSharedKey(
         JNIEnv* env, jobject, jbyteArray peer_pub_key) {

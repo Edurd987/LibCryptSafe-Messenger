@@ -23,6 +23,18 @@ object CryptoManager {
         peerOpk: ByteArray?
     ): Array<ByteArray>?
 
+    // X3DH (роль Боба-получателя). Stateless.
+    // Вход: наши IK_DH+SPK приватные, IK_A+EK_A из первого сообщения, наш OPK.
+    // ourOpk = null -> graceful degradation (DH1-DH3).
+    // Выход: [0]=Kenc, [1]=Kauth (EK не возвращаем — он от Алисы).
+    external fun x3dhResponder(
+        ourIkDhPriv: ByteArray,
+        ourSpkPriv: ByteArray,
+        peerIkDh: ByteArray,
+        peerEk: ByteArray,
+        ourOpkPriv: ByteArray?
+    ): Array<ByteArray>?
+
     // X3DH: проверка подписи SPK (ECDSA P-256, DER). Stateless.
     // Алиса проверяет связку Боба перед построением сессии (защита от MITM).
     external fun verifySignature(
