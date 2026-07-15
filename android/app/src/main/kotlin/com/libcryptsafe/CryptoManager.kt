@@ -41,6 +41,11 @@ object CryptoManager {
         pubDer: ByteArray, data: ByteArray, sigDer: ByteArray): Boolean
     external fun computeSharedKey(peerPubKey: ByteArray): Int
     external fun encrypt(plaintext: ByteArray): ByteArray?
+
+    // AES-256-GCM с явным ключом (для X3DH Kenc). Stateless — не g_session.
+    // Формат: [12 nonce][ciphertext][16 tag]. Неверный ключ -> null.
+    external fun encryptWithKey(key: ByteArray, plaintext: ByteArray): ByteArray?
+    external fun decryptWithKey(key: ByteArray, ciphertext: ByteArray): ByteArray?
     external fun decrypt(ciphertext: ByteArray): ByteArray?
     external fun getFingerprint(): String
     external fun getErrorString(errorCode: Int): String

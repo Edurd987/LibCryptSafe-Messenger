@@ -4,6 +4,7 @@
 #include <vector>
 #include "crypto_engine.hpp"
 #include "KeyExchange.hpp"
+#include "Cryptor.h"
 
 static CryptoEngine::Session g_session;
 
@@ -168,6 +169,50 @@ Java_com_libcryptsafe_CryptoManager_x3dhResponder(
         return out;
     } catch (const std::exception&) {
         return nullptr;
+    }
+}
+
+// ═══ AES-256-GCM с ЯВНЫМ ключом (для X3DH Kenc). STATELESS ═══
+// Формат: [12 nonce][ciphertext][16 tag]. Обёртка над Cryptor (не g_session!).
+JNIEXPORT jbyteArray JNICALL
+Java_com_libcryptsafe_CryptoManager_encryptWithKey(
+        JNIEnv* env, jobject, jbyteArray key, jbyteArray plaintext) {
+    try {
+        auto toVec = [&](jbyteArray arr) {
+            jsize len = env->GetArrayLength(arr);
+            std::vector<uint8_t> v(len);
+            env->GetByteArrayRegion(arr, 0, len, reinterpret_cast<jbyte*>(v.data()));
+            return v;
+        };
+        LibCryptSafe::Cryptor c(toVec(key));   // ключ Kenc явно
+        auto cipher = c.encrypt(toVec(plaintext));
+        jbyteArray out = env->NewByteArray(static_cast<jsize>(cipher.size()));
+        env->SetByteArrayRegion(out, 0, static_cast<jsize>(cipher.size()),
+            reinterpret_cast<const jbyte*>(cipher.data()));
+        return out;
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_libcryptsafe_CryptoManager_decryptWithKey(
+        JNIEnv* env, jobject, jbyteArray key, jbyteArray ciphertext) {
+    try {
+        auto toVec = [&](jbyteArray arr) {
+            jsize len = env->GetArrayLength(arr);
+            std::vector<uint8_t> v(len);
+            env->GetByteArrayRegion(arr, 0, len, reinterpret_cast<jbyte*>(v.data()));
+            return v;
+        };
+        LibCryptSafe::Cryptor c(toVec(key));
+        auto plain = c.decrypt(toVec(ciphertext));   // бросит при неверном tag
+        jbyteArray out = env->NewByteArray(static_cast<jsize>(plain.size()));
+        env->SetByteArrayRegion(out, 0, static_cast<jsize>(plain.size()),
+            reinterpret_cast<const jbyte*>(plain.data()));
+        return out;
+    } catch (const std::exception&) {
+        return nullptr;   // неверный ключ/tag -> null (аутентификация не прошла)
     }
 }
 
