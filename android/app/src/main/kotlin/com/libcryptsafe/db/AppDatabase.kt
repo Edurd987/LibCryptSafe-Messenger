@@ -9,12 +9,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
-    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class],
-    version = 4, exportSchema = false)
+    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class],
+    version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun contactDao(): ContactDao
     abstract fun prekeyDao(): PrekeyDao
+    abstract fun sessionDao(): SessionDao
 
     companion object {
         @Volatile
@@ -36,6 +37,18 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_prekeys_keyType ON prekeys(keyType)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_prekeys_keyId ON prekeys(keyId)")
+            }
+        }
+        // Миграция v4->v5: таблица sessions (X3DH SK per-peer). Данные v4 целы.
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sessions (" +
+                    "peerId TEXT PRIMARY KEY NOT NULL, " +
+                    "kEnc BLOB NOT NULL, " +
+                    "kAuth BLOB NOT NULL, " +
+                    "createdAt INTEGER NOT NULL)"
+                )
             }
         }
 
@@ -60,7 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 ).openHelperFactory(factory)
-                      .addMigrations(MIGRATION_3_4)  // путь B: данные сохраняются
+                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5)  // путь B: данные сохраняются
                       .build()
                 INSTANCE = instance
                 instance
