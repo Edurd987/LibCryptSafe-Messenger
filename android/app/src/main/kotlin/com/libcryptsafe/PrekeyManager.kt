@@ -14,12 +14,12 @@ object PrekeyManager {
     const val SPK_KEY_ID = 1           // SPK один, фиксированный id
     const val IK_DH_KEY_ID = 0         // identity DH-ключ, один
 
-    // Собирает объект подписи SPK: SPK_pub(91) || timestamp(8,BE) || key_id(4,BE) = 103б
     // Формат зафиксирован в X3DH_DESIGN.md. Обе стороны собирают одинаково.
-    fun buildSpkSignObject(spkPub: ByteArray, timestamp: Long, keyId: Int): ByteArray {
-        val buf = ByteBuffer.allocate(spkPub.size + 8 + 4)  // BE по умолчанию
+    // Объект подписи SPK: SPK_pub(91) || key_id(4,BE) = 95б. БЕЗ timestamp
+    // (ротация SPK отложена; keyId уже различает версии. ts вернём с ротацией).
+    fun buildSpkSignObject(spkPub: ByteArray, keyId: Int): ByteArray {
+        val buf = ByteBuffer.allocate(spkPub.size + 4)  // BE по умолчанию
         buf.put(spkPub)
-        buf.putLong(timestamp)
         buf.putInt(keyId)
         return buf.array()
     }
@@ -50,7 +50,7 @@ object PrekeyManager {
             val spkPriv = pair[1]  // 121б
             val ts = System.currentTimeMillis()
             // подписываем объект SPK через KeyStore (TEE)
-            val signObject = buildSpkSignObject(spkPub, ts, SPK_KEY_ID)
+            val signObject = buildSpkSignObject(spkPub, SPK_KEY_ID)
             val signature = KeyStoreManager.signData(signObject)
             dao.insert(PrekeyEntity(
                 keyType = "SPK", keyId = SPK_KEY_ID,
