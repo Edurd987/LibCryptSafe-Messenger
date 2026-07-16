@@ -156,7 +156,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_send).setOnClickListener {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
-                if (!handshakeDone) {
+                // X3DH-команды (/to, /reset) не зависят от старого handshake
+                if (text.startsWith("/")) {
+                    sendMessage(text)
+                    etMessage.text.clear()
+                } else if (!handshakeDone) {
                     addMessage(getString(R.string.waiting_peer), isOwn = false)
                 } else {
                     sendMessage(text)
