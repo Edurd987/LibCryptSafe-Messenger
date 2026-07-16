@@ -45,6 +45,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var db: AppDatabase
     private var myPubKey: ByteArray? = null
     private var myStableId: String = ""      // мой постоянный ID (для обмена при handshake)
+    // X3DH: ожидающие отправки первые сообщения (peerId -> plaintext)
+    private val pendingMessages = mutableMapOf<String, String>()
 
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -548,14 +550,66 @@ class MainActivity : AppCompatActivity() {
                         }
                         return
                     }
+                    // X3DH: ответ со связкой Боба -> собрать первое сообщение
+                    if (json.getString("type") == "prekeys_response") {
+                        val targetId = json.optString("targetId", "")
+                        val text = pendingMessages.remove(targetId)
+                        if (text == null || targetId.isEmpty()) return
+                        if (json.isNull("ik_sign") || json.isNull("ik_dh") || json.isNull("spk")) {
+                            runOnUiThread { addMessage("у $targetId нет ключей на relay", isOwn = false) }
+                            return
+                        }
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                val initJson = SessionManager.buildInitialMessage(
+                                    this@MainActivity, targetId, json, text.toByteArray(Charsets.UTF_8))
+                                if (initJson == null) {
+                                    runOnUiThread { addMessage("не удалось собрать (подпись?)", isOwn = false) }
+                                    return@launch
+                                }
+                                val payloadB64 = Base64.encodeToString(
+                                    initJson.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                                val envelope = JSONObject().apply {
+                                    put("type", "msg"); put("to", targetId); put("payload", payloadB64)
+                                }.toString()
+                                webSocket?.send(envelope)
+                                android.util.Log.d("X3DH_SEND", "первое сообщение отправлено -> $targetId")
+                                runOnUiThread { addMessage("✓ отправлено (X3DH) $targetId", isOwn = false) }
+                            } catch (e: Exception) {
+                                android.util.Log.e("X3DH_SEND", "ошибка: ${e.message}")
+                            }
+                        }
+                        return
+                    }
+
                     // К4: адресное сообщение — распаковка конверта {from,to,payload}
                     if (json.getString("type") == "msg") {
-                        if (!handshakeDone) return
                         val from = json.optString("from", "UNKNOWN")
                         val payloadB64 = json.optString("payload", "")
                         if (payloadB64.isEmpty()) return
                         val cipherBytes = Base64.decode(payloadB64, Base64.NO_WRAP)
                         if (cipherBytes.size > 64 * 1024) return   // DoS-лимит
+
+                        // X3DH: payload может быть INITIAL_HANDSHAKE (до handshakeDone)
+                        try {
+                            val inner = JSONObject(String(cipherBytes, Charsets.UTF_8))
+                            if (inner.optString("type") == "INITIAL_HANDSHAKE") {
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    val plain = SessionManager.handleInitialMessage(this@MainActivity, inner)
+                                    runOnUiThread {
+                                        if (plain != null) {
+                                            if (from != "UNKNOWN" && from.isNotEmpty()) currentPeerId = from
+                                            handleIncoming(String(plain, Charsets.UTF_8))
+                                        } else {
+                                            addMessage(getString(R.string.decrypt_error), isOwn = false)
+                                        }
+                                    }
+                                }
+                                return
+                            }
+                        } catch (_: Exception) { /* не наш JSON -> старый путь */ }
+
+                        if (!handshakeDone) return
                         val decrypted = CryptoManager.decrypt(cipherBytes)
                         runOnUiThread {
                             if (decrypted == null) {
@@ -644,8 +698,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sendMessage(text: String) {
+        // ВРЕМЕННО: /reset — очистить X3DH-сессии (для теста)
+        if (text.trim() == "/reset") {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val n = db.sessionDao().count()
+                db.sessionDao().deleteAll()
+                runOnUiThread { addMessage("сессии очищены (было $n)", isOwn = false) }
+            }
+            return
+        }
+        // X3DH: "/to <peerId> <текст>" -> первое зашифрованное сообщение
+        if (text.startsWith("/to ")) {
+            val parts = text.substringAfter("/to ").split(" ", limit = 2)
+            if (parts.size < 2 || parts[0].isBlank()) {
+                addMessage("формат: /to <peerId> <текст>", isOwn = false); return
+            }
+            val targetId = parts[0].trim()
+            val plaintext = parts[1]
+            addMessage("→ $targetId: $plaintext", isOwn = true, persist = false)
+            lifecycleScope.launch(Dispatchers.IO) {
+                val session = db.sessionDao().getSession(targetId)
+                if (session != null) {
+                    runOnUiThread { addMessage("сессия с $targetId есть (последующие — TODO)", isOwn = false) }
+                } else {
+                    pendingMessages[targetId] = plaintext
+                    val req = JSONObject().apply {
+                        put("type", "prekeys_request"); put("targetId", targetId)
+                    }.toString()
+                    webSocket?.send(req)
+                    android.util.Log.d("X3DH_SEND", "prekeys_request -> $targetId")
+                }
+            }
+            return
+        }
+        // обычный путь (старый g_session)
         addMessage(text, isOwn = true, persist = true)
-        // Оборачиваем в протокол-обёртку с явным типом (v1)
         val wrapper = JSONObject().apply {
             put("v", 1)
             put("type", "CHAT")

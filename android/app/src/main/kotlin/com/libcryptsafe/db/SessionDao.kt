@@ -19,4 +19,7 @@ interface SessionDao {
 
     @Query("SELECT COUNT(*) FROM sessions")
     suspend fun count(): Int
+
+    @Query("DELETE FROM sessions")
+    suspend fun deleteAll()
 }
