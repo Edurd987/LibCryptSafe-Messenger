@@ -3,6 +3,7 @@ package com.libcryptsafe
 import android.content.Context
 import android.util.Base64
 import com.libcryptsafe.db.AppDatabase
+import com.libcryptsafe.db.SessionEntity
 import com.libcryptsafe.db.KeyStoreManager
 import org.json.JSONObject
 
@@ -57,8 +58,12 @@ object SessionManager {
 
         // 6. наш IK_DH публичный (для заголовка — Боб посчитает DH2)
         val myIkDhPub = myIkDh.publicKey
+        // наш IK_SIGN публичный (для идентификации Бобом: peerId = stableId(ik_sign))
+        val myIkSignPub = KeyStoreManager.getIdentityPublicKeyEncoded(context)
 
-        // TODO: сохранить сессию (Kenc, Kauth) для recipientId
+        // сохраняем сессию под recipientId (stableId Боба из контактов)
+        AppDatabase.getInstance(context).sessionDao().upsert(
+            SessionEntity(recipientId, kEnc, kAuth, System.currentTimeMillis()))
 
         // собираем пакет по Развилке 5.3
         return JSONObject().apply {
@@ -66,6 +71,7 @@ object SessionManager {
             put("to", recipientId)
             // Слой 2 — X3DH-заголовок (открытый)
             put("ik_a", b64(myIkDhPub))
+            put("ik_sign_a", b64(myIkSignPub))   // для идентификации отправителя
             put("ek_a", b64(ekPub))
             put("opk_id", opkId ?: JSONObject.NULL)
             // Слой 3 — payload (зашифрован)
@@ -79,9 +85,13 @@ object SessionManager {
         val dao = AppDatabase.getInstance(context).prekeyDao()
 
         val ikA = unb64(msg.getString("ik_a"))
+        val ikSignA = unb64(msg.getString("ik_sign_a"))   // identity отправителя
         val ekA = unb64(msg.getString("ek_a"))
         val opkId = if (msg.isNull("opk_id")) null else msg.getInt("opk_id")
         val cipher = unb64(msg.getString("cipher"))
+        // peerId = stableId(ik_sign) — криптографически привязан к личности,
+        // НЕ к произвольному полю (защита от identity spoofing)
+        val peerId = KeyStoreManager.stableIdFromPublicKey(ikSignA)
 
         // наши приватные ключи
         val myIkDh = dao.getPrekeyById("IK_DH", PrekeyManager.IK_DH_KEY_ID) ?: return null
@@ -101,7 +111,10 @@ object SessionManager {
 
         // УСПЕХ -> удаляем OPK_priv (Forward Secrecy, Развилка 6)
         opkId?.let { dao.deleteOpkById(it) }
-        // TODO: сохранить сессию (Kenc, r[1]) для отправителя
+        // сохраняем сессию под peerId (= stableId Алисы из её ik_sign)
+        AppDatabase.getInstance(context).sessionDao().upsert(
+            SessionEntity(peerId, kEnc, r[1], System.currentTimeMillis()))
+        android.util.Log.d("SESSION", "сессия установлена с $peerId")
 
         return plain
     }

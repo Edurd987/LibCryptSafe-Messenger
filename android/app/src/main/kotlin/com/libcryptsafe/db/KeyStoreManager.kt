@@ -141,4 +141,13 @@ object KeyStoreManager {
         val hex = hash.take(8).joinToString("") { "%02X".format(it) }
         return hex.chunked(4).joinToString("-")
     }
+
+    // stableId от ПРОИЗВОЛЬНОГО ik_sign (X.509 DER). Та же формула, что для
+    // своего ключа. Боб вычисляет peerId Алисы из ik_sign в первом сообщении.
+    // Одинаковая функция на обеих сторонах -> peerId совпадает со stableId.
+    fun stableIdFromPublicKey(ikSignEncoded: ByteArray): String {
+        val hash = MessageDigest.getInstance("SHA-256").digest(ikSignEncoded)
+        val hex = hash.take(8).joinToString("") { "%02X".format(it) }
+        return hex.chunked(4).joinToString("-")
+    }
 }
