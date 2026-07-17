@@ -48,8 +48,16 @@ class MainActivity : AppCompatActivity() {
     // X3DH: ожидающие отправки первые сообщения (peerId -> plaintext)
     private val pendingMessages = mutableMapOf<String, String>()
 
+    // Сертификат-пиннинг: привязка к публичному ключу relay (SPKI SHA-256).
+    // Защита от MITM даже при компрометации CA (гос-во выдаёт свой корневой
+    // сертификат). Подставной сертификат -> отпечаток не совпадёт -> отказ.
+    private val certPinner = okhttp3.CertificatePinner.Builder()
+        .add("cryptsafe-relay.duckdns.org",
+             "sha256/i+9Ez+IPOKiaJpO05O1xzsEgmAyBDXymd3j4zJv3MGo=")
+        .build()
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .certificatePinner(certPinner)
         .build()
 
     private val SERVER_URL = "wss://cryptsafe-relay.duckdns.org:8080"
@@ -599,11 +607,12 @@ class MainActivity : AppCompatActivity() {
                             val inner = JSONObject(String(cipherBytes, Charsets.UTF_8))
                             if (inner.optString("type") == "INITIAL_HANDSHAKE") {
                                 lifecycleScope.launch(Dispatchers.IO) {
-                                    val plain = SessionManager.handleInitialMessage(this@MainActivity, inner)
+                                    val result = SessionManager.handleInitialMessage(this@MainActivity, inner)
                                     runOnUiThread {
-                                        if (plain != null) {
-                                            if (from != "UNKNOWN" && from.isNotEmpty()) currentPeerId = from
-                                            handleIncoming(String(plain, Charsets.UTF_8))
+                                        if (result.content != null) {
+                                            // peerId из КРИПТОГРАФИИ (ik_sign_a), не из relay-поля from
+                                            currentPeerId = result.peerId
+                                            handleIncoming(String(result.content, Charsets.UTF_8))
                                         } else {
                                             addMessage(getString(R.string.decrypt_error), isOwn = false)
                                         }

@@ -12,13 +12,14 @@ db.pragma('journal_mode = WAL')
 db.exec(`CREATE TABLE IF NOT EXISTS queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   recipient TEXT NOT NULL,
-  sender TEXT NOT NULL,
   payload TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   ttl_expiry INTEGER NOT NULL
 )`)
-const qInsert = db.prepare('INSERT INTO queue (recipient,sender,payload,created_at,ttl_expiry) VALUES (?,?,?,?,?)')
-const qSelect = db.prepare('SELECT id,sender,payload FROM queue WHERE recipient=? ORDER BY created_at ASC')
+// Blind Delivery: колонка sender УБРАНА. Relay не хранит граф кто->кому.
+// Отправитель зашит в зашифрованный payload (ik_sign_a), виден только получателю.
+const qInsert = db.prepare('INSERT INTO queue (recipient,payload,created_at,ttl_expiry) VALUES (?,?,?,?)')
+const qSelect = db.prepare('SELECT id,payload FROM queue WHERE recipient=? ORDER BY created_at ASC')
 const qDelete = db.prepare('DELETE FROM queue WHERE id=?')
 const qCleanup = db.prepare('DELETE FROM queue WHERE ttl_expiry < ?')
 
@@ -63,14 +64,13 @@ function flushQueue(socket) {
         if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
                 type: 'msg',
-                from: row.sender,
                 to: socket.senderId,
                 payload: row.payload
             }))
             qDelete.run(row.id)
         }
     }
-    if (rows.length > 0) console.log(`[QUEUE] выдано ${socket.senderId}: ${rows.length}`)
+    if (rows.length > 0) console.log(`[QUEUE] выдано сообщений: ${rows.length}`)
 }
 
 const server = https.createServer({
@@ -151,7 +151,6 @@ wss.on('connection', (socket, req) => {
                     if (client.senderId === target && client.readyState === WebSocket.OPEN) {
                         client.send(JSON.stringify({
                             type: 'msg',
-                            from: socket.senderId,
                             to: target,
                             payload: msg.payload
                         }))
@@ -159,12 +158,12 @@ wss.on('connection', (socket, req) => {
                     }
                 })
                 if (delivered) {
-                    console.log(`[>] msg ${socket.senderId}->${target}`)
+                    console.log(`[>] msg delivered`)
                 } else {
                     // К6: получатель офлайн -> в очередь
                     const now = Date.now()
-                    qInsert.run(target, socket.senderId, msg.payload, now, now + TTL_MS)
-                    console.log(`[QUEUE] ${socket.senderId}->${target} в очередь (офлайн)`)
+                    qInsert.run(target, msg.payload, now, now + TTL_MS)
+                    console.log(`[QUEUE] сообщение в очередь (офлайн)`)
                 }
                 return
             }

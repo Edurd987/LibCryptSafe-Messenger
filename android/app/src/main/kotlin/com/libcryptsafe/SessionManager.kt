@@ -81,7 +81,10 @@ object SessionManager {
 
     // ── РОЛЬ БОБА: обработать первое сообщение -> расшифровать ──
     // Возвращает расшифрованный текст или null. Удаляет OPK_priv ПОСЛЕ успеха.
-    suspend fun handleInitialMessage(context: Context, msg: JSONObject): ByteArray? {
+    // Результат приёма: текст + peerId, вычисленный КРИПТОГРАФИЧЕСКИ из ik_sign_a
+    data class DecryptedMessage(val content: ByteArray?, val peerId: String)
+
+    suspend fun handleInitialMessage(context: Context, msg: JSONObject): DecryptedMessage {
         val dao = AppDatabase.getInstance(context).prekeyDao()
 
         val ikA = unb64(msg.getString("ik_a"))
@@ -94,19 +97,19 @@ object SessionManager {
         val peerId = KeyStoreManager.stableIdFromPublicKey(ikSignA)
 
         // наши приватные ключи
-        val myIkDh = dao.getPrekeyById("IK_DH", PrekeyManager.IK_DH_KEY_ID) ?: return null
-        val mySpk  = dao.getCurrentSpk() ?: return null
+        val myIkDh = dao.getPrekeyById("IK_DH", PrekeyManager.IK_DH_KEY_ID) ?: return DecryptedMessage(null, "")
+        val mySpk  = dao.getCurrentSpk() ?: return DecryptedMessage(null, "")
         val myOpk  = opkId?.let { dao.getOpkById(it) }   // приватный OPK по id
 
         // X3DH responder -> Kenc
         val r = CryptoManager.x3dhResponder(
-            myIkDh.privateKey, mySpk.privateKey, ikA, ekA, myOpk?.privateKey) ?: return null
+            myIkDh.privateKey, mySpk.privateKey, ikA, ekA, myOpk?.privateKey) ?: return DecryptedMessage(null, "")
         val kEnc = r[0]
 
         // расшифровываем (GCM-tag проверяется внутри -> null при подделке)
         val plain = CryptoManager.decryptWithKey(kEnc, cipher) ?: run {
             android.util.Log.e("SESSION", "расшифровка не удалась (tag/ключ)")
-            return null
+            return DecryptedMessage(null, "")
         }
 
         // УСПЕХ -> удаляем OPK_priv (Forward Secrecy, Развилка 6)
@@ -116,6 +119,6 @@ object SessionManager {
             SessionEntity(peerId, kEnc, r[1], System.currentTimeMillis()))
         android.util.Log.d("SESSION", "сессия установлена с $peerId")
 
-        return plain
+        return DecryptedMessage(plain, peerId)
     }
 }
