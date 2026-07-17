@@ -80,11 +80,23 @@ const server = https.createServer({
 
 const wss = new WebSocket.Server({ server })
 const clients = new Set()
+// DoS-защита: лимит соединений на IP. IP живёт только в памяти,
+// в логи НЕ пишется (сохраняем Blind Delivery — сервер слепой к метаданным).
+const ipConnections = new Map()
+const MAX_CONNECTIONS_PER_IP = 20
 
 wss.on('connection', (socket, req) => {
-    clients.add(socket)
     const ip = req.socket.remoteAddress
-    console.log(`[+] Connected: ${ip} | Total: ${clients.size}`)
+    // DoS-защита: лимит на IP (IP только в памяти, не в лог)
+    const cur = ipConnections.get(ip) || 0
+    if (cur >= MAX_CONNECTIONS_PER_IP) {
+        console.log(`[-] Connection rejected (limit)`)
+        socket.terminate()
+        return
+    }
+    clients.add(socket)
+    ipConnections.set(ip, cur + 1)
+    console.log(`[+] Connected | Total: ${clients.size}`)
     clients.forEach(other => {
         if (other !== socket && other.readyState === WebSocket.OPEN && other.pubKey) {
             socket.send(JSON.stringify({ type: 'pubkey', key: other.pubKey, senderId: other.senderId }))
@@ -176,9 +188,16 @@ wss.on('connection', (socket, req) => {
     })
     socket.on('close', () => {
         clients.delete(socket)
+        const c = (ipConnections.get(ip) || 1) - 1
+        if (c <= 0) ipConnections.delete(ip); else ipConnections.set(ip, c)
         console.log(`[-] Disconnected | Total: ${clients.size}`)
     })
-    socket.on('error', (err) => console.log(`[!] Error: ${err.message}`))
+    socket.on('error', (err) => {
+        clients.delete(socket)
+        const c = (ipConnections.get(ip) || 1) - 1
+        if (c <= 0) ipConnections.delete(ip); else ipConnections.set(ip, c)
+        console.log(`[!] Error: ${err.message}`)
+    })
 })
 
 const PORT = 8080
