@@ -38,6 +38,14 @@ class MainActivity : AppCompatActivity() {
     // С кем сейчас диалог. Пока однодиалоговый режим -> "UNKNOWN".
     // Кирпич 3 заменит на реальный ID из pubkey собеседника при handshake.
     private var currentPeerId = "UNKNOWN"
+
+    // Persist: запомнить последний диалог (для восстановления при перезапуске)
+    private fun saveLastPeerId(peerId: String) {
+        if (peerId != "UNKNOWN" && peerId.isNotEmpty()) {
+            getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+                .edit().putString("last_peer_id", peerId).apply()
+        }
+    }
     private var isConnected = false
     private var reconnectAttempts = 0
     private var intentionallyClosed = false
@@ -134,6 +142,10 @@ class MainActivity : AppCompatActivity() {
 
     // Запуск приложения после разблокировки (или если блокировка выкл)
     private fun startApp() {
+        // Persist: восстановить последний диалог -> loadHistory увидит непустой peer
+        val lastPeer = getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+            .getString("last_peer_id", "UNKNOWN") ?: "UNKNOWN"
+        if (lastPeer != "UNKNOWN") currentPeerId = lastPeer
         loadHistory()
         // Стабильный ID клиента (постоянный, переживает перезапуски) — пока в лог
         val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)
@@ -318,6 +330,7 @@ class MainActivity : AppCompatActivity() {
                 val peerName = c.name
                 row.setOnClickListener {
                     currentPeerId = peer
+                    saveLastPeerId(peer)
                     loadHistory()                                // загрузить переписку этого контакта
                     findViewById<TextView>(R.id.tab_chat).performClick()  // перейти на вкладку Чат
                 }
@@ -547,6 +560,7 @@ class MainActivity : AppCompatActivity() {
                         // игнорируем эхо своего же ID (relay шлёт наш pubkey обратно)
                         if (peerId.isNotEmpty() && peerId != "UNKNOWN" && peerId != myStableId) {
                             currentPeerId = peerId
+                            saveLastPeerId(peerId)
                         }
 
                         // Вычисляем shared key
@@ -612,6 +626,7 @@ class MainActivity : AppCompatActivity() {
                                         if (result.content != null) {
                                             // peerId из КРИПТОГРАФИИ (ik_sign_a), не из relay-поля from
                                             currentPeerId = result.peerId
+                                            saveLastPeerId(result.peerId)
                                             handleIncoming(String(result.content, Charsets.UTF_8))
                                         } else {
                                             addMessage(getString(R.string.decrypt_error), isOwn = false)
@@ -630,7 +645,7 @@ class MainActivity : AppCompatActivity() {
                                 return@runOnUiThread
                             }
                             // привязка к диалогу отправителя
-                            if (from != "UNKNOWN" && from.isNotEmpty()) currentPeerId = from
+                            if (from != "UNKNOWN" && from.isNotEmpty()) { currentPeerId = from; saveLastPeerId(from) }
                             handleIncoming(String(decrypted, Charsets.UTF_8))
                         }
                         return
@@ -728,7 +743,9 @@ class MainActivity : AppCompatActivity() {
             }
             val targetId = parts[0].trim()
             val plaintext = parts[1]
-            addMessage("→ $targetId: $plaintext", isOwn = true, persist = false)
+            addMessage(plaintext, isOwn = true, persist = true, peerId = targetId)
+            currentPeerId = targetId
+            saveLastPeerId(targetId)
             lifecycleScope.launch(Dispatchers.IO) {
                 val session = db.sessionDao().getSession(targetId)
                 if (session != null) {
