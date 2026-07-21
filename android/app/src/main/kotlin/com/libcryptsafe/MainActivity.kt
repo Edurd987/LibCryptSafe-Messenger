@@ -743,6 +743,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Блок 3: единый узел отправки. Клик по контакту ставит currentPeerId,
+    // поле ввода зовёт sendToPeer(currentPeerId, text) — команда /to больше не нужна.
+    private fun sendToPeer(targetId: String, plaintext: String) {
+        addMessage(plaintext, isOwn = true, persist = true, peerId = targetId)
+        currentPeerId = targetId
+        saveLastPeerId(targetId)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val session = db.sessionDao().getSession(targetId)
+            if (session != null) {
+                // сессия есть -> CHAT_ENCRYPTED на Kenc (Блок 2)
+                val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, plaintext)
+                if (pkt != null) {
+                    val payloadB64 = Base64.encodeToString(
+                        pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                    val envelope = JSONObject().apply {
+                        put("type", "msg"); put("to", targetId); put("payload", payloadB64)
+                    }.toString()
+                    webSocket?.send(envelope)
+                    android.util.Log.d("X3DH_SEND", "CHAT_ENCRYPTED -> $targetId")
+                } else {
+                    runOnUiThread { addMessage("ошибка шифрования", isOwn = false) }
+                }
+            } else {
+                // сессии нет -> X3DH: очередь + запрос prekeys
+                pendingMessages[targetId] = plaintext
+                val req = JSONObject().apply {
+                    put("type", "prekeys_request"); put("targetId", targetId)
+                }.toString()
+                webSocket?.send(req)
+                android.util.Log.d("X3DH_SEND", "prekeys_request -> $targetId")
+            }
+        }
+    }
+
     private fun sendMessage(text: String) {
         // ВРЕМЕННО: /reset — очистить X3DH-сессии (для теста)
         if (text.trim() == "/reset") {
@@ -761,44 +795,16 @@ class MainActivity : AppCompatActivity() {
             }
             val targetId = parts[0].trim()
             val plaintext = parts[1]
-            addMessage(plaintext, isOwn = true, persist = true, peerId = targetId)
-            currentPeerId = targetId
-            saveLastPeerId(targetId)
-            lifecycleScope.launch(Dispatchers.IO) {
-                val session = db.sessionDao().getSession(targetId)
-                if (session != null) {
-                    // Блок 2: сессия есть -> шифруем на Kenc (CHAT_ENCRYPTED), не X3DH
-                    val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, plaintext)
-                    if (pkt != null) {
-                        val payloadB64 = Base64.encodeToString(
-                            pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-                        val envelope = JSONObject().apply {
-                            put("type", "msg"); put("to", targetId); put("payload", payloadB64)
-                        }.toString()
-                        webSocket?.send(envelope)
-                        android.util.Log.d("X3DH_SEND", "CHAT_ENCRYPTED -> $targetId")
-                    } else {
-                        runOnUiThread { addMessage("ошибка шифрования", isOwn = false) }
-                    }
-                } else {
-                    pendingMessages[targetId] = plaintext
-                    val req = JSONObject().apply {
-                        put("type", "prekeys_request"); put("targetId", targetId)
-                    }.toString()
-                    webSocket?.send(req)
-                    android.util.Log.d("X3DH_SEND", "prekeys_request -> $targetId")
-                }
-            }
+            sendToPeer(targetId, plaintext)
             return
         }
-        // обычный путь (старый g_session)
-        addMessage(text, isOwn = true, persist = true)
-        val wrapper = JSONObject().apply {
-            put("v", 1)
-            put("type", "CHAT")
-            put("text", text)
-        }.toString()
-        sendEnvelope(wrapper)
+        // Блок 3: обычная отправка идёт по выбранному контакту (currentPeerId).
+        // Команда /to больше не нужна — клик по контакту задаёт собеседника.
+        if (currentPeerId == "UNKNOWN" || currentPeerId.isEmpty()) {
+            addMessage("Выберите контакт (вкладка Контакты)", isOwn = false)
+            return
+        }
+        sendToPeer(currentPeerId, text)
     }
 
     // К4: упаковка зашифрованного контента в адресный конверт {type,to,payload}.
