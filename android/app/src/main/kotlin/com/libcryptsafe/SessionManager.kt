@@ -121,4 +121,47 @@ object SessionManager {
 
         return DecryptedMessage(plain, peerId)
     }
+
+    /**
+     * Шифрует последующее сообщение на сохранённом Kenc (сессия уже есть).
+     * null -> сессии нет, UI должен сделать X3DH (первое сообщение).
+     */
+    suspend fun encryptMessage(context: Context, peerId: String, plaintext: String): JSONObject? {
+        val session = AppDatabase.getInstance(context).sessionDao().getSession(peerId)
+            ?: return null
+        val cipherBytes = CryptoManager.encryptWithKey(session.kEnc, plaintext.toByteArray(Charsets.UTF_8))
+            ?: return null
+        android.util.Log.d("SESSION", "encryptMessage -> $peerId (na Kenc)")
+        return JSONObject().apply {
+            put("type", "CHAT_ENCRYPTED")
+            put("cipher", b64(cipherBytes))
+        }
+    }
+
+    /**
+     * Расшифровывает последующее сообщение на Kenc сессии.
+     * GCM-tag проверяется внутри -> null при подделке/неверном ключе.
+     */
+    suspend fun decryptMessage(context: Context, peerId: String, cipherB64: String): ByteArray? {
+        val session = AppDatabase.getInstance(context).sessionDao().getSession(peerId)
+            ?: return null
+        return CryptoManager.decryptWithKey(session.kEnc, unb64(cipherB64))
+    }
+
+    /**
+     * Вариант Г: перебор всех сессий для CHAT_ENCRYPTED (конверт слепой,
+     * отправитель НЕ в метаданных). GCM-tag = детектор: расшифровалось -> та сессия.
+     */
+    suspend fun decryptAnySession(context: Context, cipherB64: String): DecryptedMessage? {
+        val cipher = unb64(cipherB64)
+        val sessions = AppDatabase.getInstance(context).sessionDao().getAllSessions()
+        for (s in sessions) {
+            val plain = CryptoManager.decryptWithKey(s.kEnc, cipher)
+            if (plain != null) {
+                android.util.Log.d("SESSION", "decryptAnySession -> ${s.peerId}")
+                return DecryptedMessage(plain, s.peerId)
+            }
+        }
+        return null
+    }
 }

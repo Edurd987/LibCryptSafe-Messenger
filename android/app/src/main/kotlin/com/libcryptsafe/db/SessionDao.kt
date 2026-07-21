@@ -14,6 +14,9 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE peerId = :peerId LIMIT 1")
     suspend fun getSession(peerId: String): SessionEntity?
 
+    @Query("SELECT * FROM sessions")
+    suspend fun getAllSessions(): List<SessionEntity>
+
     @Query("DELETE FROM sessions WHERE peerId = :peerId")
     suspend fun deleteSession(peerId: String)
 

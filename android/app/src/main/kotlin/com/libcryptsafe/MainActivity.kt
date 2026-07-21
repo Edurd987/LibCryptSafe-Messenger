@@ -635,6 +635,24 @@ class MainActivity : AppCompatActivity() {
                                 }
                                 return
                             }
+                            // Блок 2: последующее сообщение на Kenc (конверт слепой)
+                            if (inner.optString("type") == "CHAT_ENCRYPTED") {
+                                val cipherStr = inner.optString("cipher", "")
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    val result = SessionManager.decryptAnySession(this@MainActivity, cipherStr)
+                                    runOnUiThread {
+                                        if (result?.content != null) {
+                                            // отправитель определён перебором сессий (GCM), не из метаданных
+                                            currentPeerId = result.peerId
+                                            saveLastPeerId(result.peerId)
+                                            handleIncoming(String(result.content, Charsets.UTF_8))
+                                        } else {
+                                            addMessage(getString(R.string.decrypt_error), isOwn = false)
+                                        }
+                                    }
+                                }
+                                return
+                            }
                         } catch (_: Exception) { /* не наш JSON -> старый путь */ }
 
                         if (!handshakeDone) return
@@ -749,7 +767,19 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch(Dispatchers.IO) {
                 val session = db.sessionDao().getSession(targetId)
                 if (session != null) {
-                    runOnUiThread { addMessage("сессия с $targetId есть (последующие — TODO)", isOwn = false) }
+                    // Блок 2: сессия есть -> шифруем на Kenc (CHAT_ENCRYPTED), не X3DH
+                    val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, plaintext)
+                    if (pkt != null) {
+                        val payloadB64 = Base64.encodeToString(
+                            pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                        val envelope = JSONObject().apply {
+                            put("type", "msg"); put("to", targetId); put("payload", payloadB64)
+                        }.toString()
+                        webSocket?.send(envelope)
+                        android.util.Log.d("X3DH_SEND", "CHAT_ENCRYPTED -> $targetId")
+                    } else {
+                        runOnUiThread { addMessage("ошибка шифрования", isOwn = false) }
+                    }
                 } else {
                     pendingMessages[targetId] = plaintext
                     val req = JSONObject().apply {
