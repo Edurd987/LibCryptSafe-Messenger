@@ -651,38 +651,12 @@ class MainActivity : AppCompatActivity() {
                             }
                         } catch (_: Exception) { /* не наш JSON -> старый путь */ }
 
-                        if (!handshakeDone) return
-                        val decrypted = CryptoManager.decrypt(cipherBytes)
-                        runOnUiThread {
-                            if (decrypted == null) {
-                                addMessage(getString(R.string.decrypt_error), isOwn = false)
-                                return@runOnUiThread
-                            }
-                            // привязка к диалогу отправителя
-                            if (from != "UNKNOWN" && from.isNotEmpty()) { currentPeerId = from; saveLastPeerId(from) }
-                            handleIncoming(String(decrypted, Charsets.UTF_8))
-                        }
-                        return
                     }
                 } catch (e: Exception) {
                     // не JSON
                 }
             }
 
-            override fun onMessage(ws: WebSocket, bytes: ByteString) {
-                if (!handshakeDone) return
-                // Безопасность: лимит размера входящего (защита от DoS)
-                if (bytes.size > 64 * 1024) return
-                val decrypted = CryptoManager.decrypt(bytes.toByteArray())
-                runOnUiThread {
-                    if (decrypted == null) {
-                        addMessage(getString(R.string.decrypt_error), isOwn = false)
-                        return@runOnUiThread
-                    }
-                    val raw = String(decrypted, Charsets.UTF_8)
-                    handleIncoming(raw)
-                }
-            }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 isConnected = false
