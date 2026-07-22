@@ -177,15 +177,11 @@ class MainActivity : AppCompatActivity() {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
                 // X3DH-команды (/to, /reset) не зависят от старого handshake
-                if (text.startsWith("/")) {
-                    sendMessage(text)
-                    etMessage.text.clear()
-                } else if (!handshakeDone) {
-                    addMessage(getString(R.string.waiting_peer), isOwn = false)
-                } else {
-                    sendMessage(text)
-                    etMessage.text.clear()
-                }
+                // Блок 3: отправка всегда через sendMessage -> sendToPeer (per-contact X3DH).
+                // Убран устаревший UI-барьер handshakeDone (рудимент g_session) —
+                // он плодил "ожидание второго пользователя" в ленте чата.
+                sendMessage(text)
+                etMessage.text.clear()
             }
         }
         setupTabs()
