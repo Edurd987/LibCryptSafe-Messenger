@@ -55,6 +55,10 @@ class MainActivity : AppCompatActivity() {
     private var myStableId: String = ""      // мой постоянный ID (для обмена при handshake)
     // X3DH: ожидающие отправки первые сообщения (peerId -> plaintext)
     private val pendingMessages = mutableMapOf<String, String>()
+    // Статусы доставки: nonce -> локальный id в БД (для updateStatus по ACK)
+    private val nonceToIdMap = mutableMapOf<String, Long>()
+    // Статусы доставки: nonce -> пузырь на экране (быстро перекрасить галочку)
+    private val nonceToViewMap = mutableMapOf<String, TextView>()
 
     // Сертификат-пиннинг: привязка к публичному ключу relay (SPKI SHA-256).
     // Защита от MITM даже при компрометации CA (гос-во выдаёт свой корневой
@@ -641,7 +645,7 @@ class MainActivity : AppCompatActivity() {
                                             // отправитель определён перебором сессий (GCM), не из метаданных
                                             currentPeerId = result.peerId
                                             saveLastPeerId(result.peerId)
-                                            handleIncoming(String(result.content, Charsets.UTF_8))
+                                            handleDecrypted(result.peerId, String(result.content, Charsets.UTF_8))
                                         } else {
                                             addMessage(getString(R.string.decrypt_error), isOwn = false)
                                         }
@@ -680,6 +684,53 @@ class MainActivity : AppCompatActivity() {
 
     // Разбор входящего сообщения: явный маркер type, без угадывания.
     // Совместимость: не-JSON или без "v" => старый чистый CHAT.
+    // Statuses: three cases inside the ciphertext.
+    //   {"a": nonce}      -> receipt: mark DELIVERED, show nothing, do NOT reply
+    //   {"n": .., "t": ..} -> new format: show text, send receipt back
+    //   anything else      -> old format: show as is, no receipt
+    private fun handleDecrypted(peerId: String, raw: String) {
+        try {
+            val j = JSONObject(raw)
+            val ack = j.optString("a", "")
+            if (ack.isNotEmpty()) {
+                markDelivered(ack)
+                return
+            }
+            val n = j.optString("n", "")
+            if (n.isNotEmpty()) {
+                handleIncoming(j.optString("t", ""))
+                sendAck(peerId, n)
+                return
+            }
+        } catch (_: Exception) { /* fallback below */ }
+        handleIncoming(raw)
+    }
+
+    private fun markDelivered(nonce: String) {
+        val id = nonceToIdMap[nonce]
+        if (id != null) {
+            lifecycleScope.launch(Dispatchers.IO) { db.messageDao().updateStatus(id, "DELIVERED") }
+        }
+        nonceToViewMap[nonce]?.let { tv -> tv.text = tv.text.toString() + "  \u2713\u2713" }
+        nonceToIdMap.remove(nonce)
+        nonceToViewMap.remove(nonce)
+        android.util.Log.d("ACK", "delivered nonce=${nonce.take(8)}")
+    }
+
+    private fun sendAck(targetId: String, nonce: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val body = JSONObject().apply { put("a", nonce) }.toString()
+            val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, body) ?: return@launch
+            val payloadB64 = Base64.encodeToString(
+                pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            val envelope = JSONObject().apply {
+                put("type", "msg"); put("to", targetId); put("payload", payloadB64)
+            }.toString()
+            webSocket?.send(envelope)
+            android.util.Log.d("ACK", "sent -> $targetId nonce=${nonce.take(8)}")
+        }
+    }
+
     private fun handleIncoming(raw: String) {
         val json = try {
             org.json.JSONObject(raw)
@@ -716,14 +767,22 @@ class MainActivity : AppCompatActivity() {
     // Блок 3: единый узел отправки. Клик по контакту ставит currentPeerId,
     // поле ввода зовёт sendToPeer(currentPeerId, text) — команда /to больше не нужна.
     private fun sendToPeer(targetId: String, plaintext: String) {
-        addMessage(plaintext, isOwn = true, persist = true, peerId = targetId)
+        // Статусы доставки: случайный непрозрачный маркер сообщения.
+        // НЕ локальный id БД (тот глобальный счётчик — выдал бы собеседнику
+        // общее число сообщений). Живёт только внутри шифра.
+        val msgNonce = java.util.UUID.randomUUID().toString()
+        addMessage(plaintext, isOwn = true, persist = true, peerId = targetId, nonce = msgNonce)
         currentPeerId = targetId
         saveLastPeerId(targetId)
         lifecycleScope.launch(Dispatchers.IO) {
             val session = db.sessionDao().getSession(targetId)
             if (session != null) {
                 // сессия есть -> CHAT_ENCRYPTED на Kenc (Блок 2)
-                val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, plaintext)
+                val inner = JSONObject().apply {
+                    put("n", msgNonce)
+                    put("t", plaintext)
+                }.toString()
+                val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, inner)
                 if (pkt != null) {
                     val payloadB64 = Base64.encodeToString(
                         pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
@@ -801,10 +860,11 @@ class MainActivity : AppCompatActivity() {
         sendEnvelope(wrapper)
     }
 
-    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId) {
+    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null) {
         if (persist) {
             lifecycleScope.launch(Dispatchers.IO) {
-                db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
+                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
+                if (nonce != null) nonceToIdMap[nonce] = newId
             }
         }
         val tv = TextView(this).apply {
@@ -823,6 +883,7 @@ class MainActivity : AppCompatActivity() {
             marginStart  = if (isOwn) 80 else 0
             marginEnd    = if (isOwn) 0 else 80
         }
+        if (nonce != null) nonceToViewMap[nonce] = tv
         containerMessages.addView(tv, params)
         scrollMessages.post { scrollMessages.fullScroll(ScrollView.FOCUS_DOWN) }
     }
@@ -837,6 +898,7 @@ class MainActivity : AppCompatActivity() {
         val peer = currentPeerId
         lifecycleScope.launch {
             val history = withContext(Dispatchers.IO) { db.messageDao().getMessagesForPeerOnce(peer) }
+            nonceToViewMap.clear()
             containerMessages.removeAllViews()   // очистить перед загрузкой диалога
             for (m in history) {
                 addMessage(m.text, m.isOwn, persist = false, peerId = peer)
