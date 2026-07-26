@@ -691,16 +691,26 @@ class MainActivity : AppCompatActivity() {
     private fun handleDecrypted(peerId: String, raw: String) {
         try {
             val j = JSONObject(raw)
-            val ack = j.optString("a", "")
-            if (ack.isNotEmpty()) {
-                markDelivered(ack)
-                return
-            }
-            val n = j.optString("n", "")
-            if (n.isNotEmpty()) {
-                handleIncoming(j.optString("t", ""))
-                sendAck(peerId, n)
-                return
+            val v = j.optInt("v", 0)
+            when {
+                v >= 2 -> {
+                    // будущий протокол: не падаем, просим обновиться
+                    android.util.Log.w("PROTO", "unknown version v=$v — update required")
+                    addMessage(getString(R.string.update_required), isOwn = false)
+                    return
+                }
+                v == 1 -> {
+                    val ack = j.optString("a", "")
+                    if (ack.isNotEmpty()) { markDelivered(ack); return }
+                    val n = j.optString("n", "")
+                    if (n.isNotEmpty()) {
+                        handleIncoming(j.optString("t", ""))
+                        sendAck(peerId, n)
+                        return
+                    }
+                    return
+                }
+                // v == 0 -> не наш новый протокол: откат ниже
             }
         } catch (_: Exception) { /* fallback below */ }
         handleIncoming(raw)
@@ -719,7 +729,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun sendAck(targetId: String, nonce: String) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val body = JSONObject().apply { put("a", nonce) }.toString()
+            val body = JSONObject().apply { put("v", 1); put("a", nonce) }.toString()
             val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, body) ?: return@launch
             val payloadB64 = Base64.encodeToString(
                 pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
@@ -779,6 +789,7 @@ class MainActivity : AppCompatActivity() {
             if (session != null) {
                 // сессия есть -> CHAT_ENCRYPTED на Kenc (Блок 2)
                 val inner = JSONObject().apply {
+                    put("v", 1)
                     put("n", msgNonce)
                     put("t", plaintext)
                 }.toString()

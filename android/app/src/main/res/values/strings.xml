@@ -88,4 +88,5 @@
     <string name="nardi_mode_title">Choose mode</string>
     <string name="nardi_mode_local">Two players</string>
     <string name="nardi_mode_bot">Against computer</string>
+    <string name="update_required">⚠️ Message from a newer app version. Please update.</string>
 </resources>

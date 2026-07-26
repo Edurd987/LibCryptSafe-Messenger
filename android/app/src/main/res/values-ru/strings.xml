@@ -88,4 +88,5 @@
     <string name="nardi_mode_title">Выберите режим</string>
     <string name="nardi_mode_local">Вдвоём</string>
     <string name="nardi_mode_bot">Против компьютера</string>
+    <string name="update_required">⚠️ Сообщение новой версии приложения. Обновите приложение.</string>
 </resources>
