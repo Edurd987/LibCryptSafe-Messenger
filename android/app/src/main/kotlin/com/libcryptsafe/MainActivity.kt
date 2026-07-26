@@ -721,7 +721,7 @@ class MainActivity : AppCompatActivity() {
         if (id != null) {
             lifecycleScope.launch(Dispatchers.IO) { db.messageDao().updateStatus(id, "DELIVERED") }
         }
-        nonceToViewMap[nonce]?.let { tv -> tv.text = tv.text.toString() + "  \u2713\u2713" }
+        nonceToViewMap[nonce]?.let { tv -> tv.text = bubbleText(tv.text.toString(), true, "DELIVERED") }
         nonceToIdMap.remove(nonce)
         nonceToViewMap.remove(nonce)
         android.util.Log.d("ACK", "delivered nonce=${nonce.take(8)}")
@@ -871,7 +871,15 @@ class MainActivity : AppCompatActivity() {
         sendEnvelope(wrapper)
     }
 
-    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null) {
+    // Единый рендер пузыря: только СВОИ сообщения получают галочки статуса.
+    // DELIVERED -> текст + галочка (квитанция пришла). Иначе (SENT/NONE) -> текст.
+    // Одну галочку для SENT не рисуем: у нас "отправил и жду ACK", отдельная
+    // одиночная галочка без подтверждения путала бы больше, чем помогает.
+    private fun bubbleText(text: String, isOwn: Boolean, status: String): String {
+        return if (isOwn && status == "DELIVERED") "$text  \u2713\u2713" else text
+    }
+
+    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null, status: String = "NONE") {
         if (persist) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
@@ -879,7 +887,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val tv = TextView(this).apply {
-            this.text = text
+            this.text = bubbleText(text, isOwn, status)
             textSize  = 15f
             setPadding(28, 18, 28, 18)
             setBackgroundResource(if (isOwn) R.drawable.bubble_mine else R.drawable.bubble_other)
@@ -912,7 +920,7 @@ class MainActivity : AppCompatActivity() {
             nonceToViewMap.clear()
             containerMessages.removeAllViews()   // очистить перед загрузкой диалога
             for (m in history) {
-                addMessage(m.text, m.isOwn, persist = false, peerId = peer)
+                addMessage(m.text, m.isOwn, persist = false, peerId = peer, status = m.status)
             }
         }
     }
