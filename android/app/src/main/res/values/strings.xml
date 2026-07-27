@@ -89,4 +89,7 @@
     <string name="nardi_mode_local">Two players</string>
     <string name="nardi_mode_bot">Against computer</string>
     <string name="update_required">⚠️ Message from a newer app version. Please update.</string>
+    <string name="notif_channel_name">Messages</string>
+    <string name="notif_channel_desc">Notifications for incoming encrypted messages.</string>
+    <string name="notif_generic_title">New message</string>
 </resources>

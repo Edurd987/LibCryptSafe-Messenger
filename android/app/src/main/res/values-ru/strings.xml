@@ -89,4 +89,7 @@
     <string name="nardi_mode_local">Вдвоём</string>
     <string name="nardi_mode_bot">Против компьютера</string>
     <string name="update_required">⚠️ Сообщение новой версии приложения. Обновите приложение.</string>
+    <string name="notif_channel_name">Сообщения</string>
+    <string name="notif_channel_desc">Уведомления о входящих зашифрованных сообщениях.</string>
+    <string name="notif_generic_title">Новое сообщение</string>
 </resources>
