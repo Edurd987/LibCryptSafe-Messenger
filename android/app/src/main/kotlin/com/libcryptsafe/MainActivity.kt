@@ -30,6 +30,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.app.PendingIntent
 import android.os.Build
 import androidx.core.app.ActivityCompat
 
@@ -777,12 +779,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // L1 Кирпич 2: сигнал о входящем сообщении чата. БЕЗ текста и имени —
+    // только "Новое сообщение" (имя контакта локально, не отдаём системе).
+    // Канал messages_channel уже задаёт звук/вибрацию/VISIBILITY_SECRET.
+    private fun notifyIncoming() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) return
+        // Тап по уведомлению -> поднять существующую активность (SINGLE_TOP,
+        // НЕ CLEAR_TASK — иначе снесётся открытый чат/набранный текст).
+        val tapIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pending = PendingIntent.getActivity(
+            this, 0, tapIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notif = androidx.core.app.NotificationCompat.Builder(this, "messages_channel")
+            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setContentTitle(getString(R.string.notif_generic_title))
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+            .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_SECRET)
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+            .build()
+        androidx.core.app.NotificationManagerCompat.from(this).notify(1001, notif)
+    }
+
     private fun handleIncoming(raw: String) {
         val json = try {
             org.json.JSONObject(raw)
         } catch (e: Exception) {
             // не JSON => старый формат, чистый текст чата
             addMessage(raw, isOwn = false, persist = true)
+            notifyIncoming()
             return
         }
         // нет версии => старый формат (на всякий случай)
@@ -795,6 +825,7 @@ class MainActivity : AppCompatActivity() {
             "CHAT" -> {
                 val text = json.optString("text", "")
                 addMessage(text, isOwn = false, persist = true)
+                notifyIncoming()
             }
             "GAME_MOVE", "GAME_CHAT" -> {
                 // Движка игр пока нет — заглушка. Валидируем gameId.
