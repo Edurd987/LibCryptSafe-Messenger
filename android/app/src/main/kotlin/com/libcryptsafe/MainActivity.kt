@@ -56,6 +56,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private var isConnected = false
+    // L1 Кирпич 4: приложение на переднем плане? Если да -> тихий тычок вместо баннера.
+    private var isAppForeground = false
     private var reconnectAttempts = 0
     private var intentionallyClosed = false
     private val reconnectHandler = Handler(Looper.getMainLooper())
@@ -782,7 +784,27 @@ class MainActivity : AppCompatActivity() {
     // L1 Кирпич 2: сигнал о входящем сообщении чата. БЕЗ текста и имени —
     // только "Новое сообщение" (имя контакта локально, не отдаём системе).
     // Канал messages_channel уже задаёт звук/вибрацию/VISIBILITY_SECRET.
+    // Короткий тактильный тычок (foreground): пользователь в приложении, шумный
+    // баннер не нужен, но лёгкий сигнал полезен (мог скроллить/печатать).
+    private fun hapticNudge() {
+        val vib = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE)
+                as android.os.VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vib.vibrate(android.os.VibrationEffect.createOneShot(50,
+                android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION") vib.vibrate(50)
+        }
+    }
+
     private fun notifyIncoming() {
+        // Кирпич 4: приложение видно -> тихий тактильный тычок, без баннера/звука.
+        if (isAppForeground) { hapticNudge(); return }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) return
@@ -1007,10 +1029,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        isAppForeground = true
         intentionallyClosed = false
         if (!isConnected && webSocket == null) {
             connectWebSocket()
         }
+    }
+    override fun onPause() {
+        super.onPause()
+        isAppForeground = false
     }
 
     override fun onDestroy() {
