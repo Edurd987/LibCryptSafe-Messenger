@@ -527,6 +527,23 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putBoolean("app_lock_enabled", false).apply()
             }
         }
+        setupNotifToggles()
+    }
+
+    // L1 Кирпич 5: тумблеры звук/вибрация. Паттерн как у app_lock: читаем флаг ->
+    // isChecked, слушатель -> сохраняем. Дефолты совпадают с soundEnabled/vibrationEnabled.
+    private fun setupNotifToggles() {
+        val prefs = getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+        val swSound = findViewById<android.widget.Switch>(R.id.switch_notif_sound)
+        swSound.isChecked = prefs.getBoolean("notif_sound", false)
+        swSound.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("notif_sound", checked).apply()
+        }
+        val swVib = findViewById<android.widget.Switch>(R.id.switch_notif_vibration)
+        swVib.isChecked = prefs.getBoolean("notif_vibration", true)
+        swVib.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("notif_vibration", checked).apply()
+        }
     }
 
     private fun saveScreenSecurity(value: Boolean) {
@@ -786,7 +803,17 @@ class MainActivity : AppCompatActivity() {
     // Канал messages_channel уже задаёт звук/вибрацию/VISIBILITY_SECRET.
     // Короткий тактильный тычок (foreground): пользователь в приложении, шумный
     // баннер не нужен, но лёгкий сигнал полезен (мог скроллить/печатать).
+    // L1 Кирпич 5: флаги уведомлений. По умолчанию звук ВЫКЛ (Privacy by Design —
+    // приложение стартует тихо, не выдаёт звонком), вибрация ВКЛ.
+    private fun soundEnabled(): Boolean =
+        getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+            .getBoolean("notif_sound", false)
+    private fun vibrationEnabled(): Boolean =
+        getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
+            .getBoolean("notif_vibration", true)
+
     private fun hapticNudge() {
+        if (!vibrationEnabled()) return
         val vib = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             (getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE)
                 as android.os.VibratorManager).defaultVibrator
@@ -817,14 +844,19 @@ class MainActivity : AppCompatActivity() {
             this, 0, tapIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val notif = androidx.core.app.NotificationCompat.Builder(this, "messages_channel")
+        // Флаги: звук/вибрация в обход канала (звук канала менять на лету нельзя),
+        // поэтому глушим на самом уведомлении через setSound(null)/setVibrate.
+        val builder = androidx.core.app.NotificationCompat.Builder(this, "messages_channel")
             .setSmallIcon(android.R.drawable.ic_dialog_email)
             .setContentTitle(getString(R.string.notif_generic_title))
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
             .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(pending)
             .setAutoCancel(true)
-            .build()
+        if (!soundEnabled()) builder.setSound(null)
+        if (vibrationEnabled()) builder.setVibrate(longArrayOf(0, 200))
+        else builder.setVibrate(longArrayOf(0))
+        val notif = builder.build()
         androidx.core.app.NotificationManagerCompat.from(this).notify(1001, notif)
     }
 

@@ -92,4 +92,8 @@
     <string name="notif_channel_name">Messages</string>
     <string name="notif_channel_desc">Notifications for incoming encrypted messages.</string>
     <string name="notif_generic_title">New message</string>
+    <string name="notif_sound_label">Sound notifications</string>
+    <string name="notif_sound_desc">Play a sound for incoming messages</string>
+    <string name="notif_vibration_label">Vibration</string>
+    <string name="notif_vibration_desc">Vibrate for incoming messages</string>
 </resources>
