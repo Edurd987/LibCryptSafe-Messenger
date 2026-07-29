@@ -96,4 +96,7 @@
     <string name="notif_sound_desc">Проигрывать звук при входящих сообщениях</string>
     <string name="notif_vibration_label">Вибрация</string>
     <string name="notif_vibration_desc">Вибрация при входящих сообщениях</string>
+    <string name="svc_channel_name">Соединение</string>
+    <string name="svc_channel_desc">Поддерживает защищённое соединение активным</string>
+    <string name="svc_notif_title">Защищённое соединение активно</string>
 </resources>

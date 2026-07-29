@@ -117,6 +117,7 @@ class MainActivity : AppCompatActivity() {
         applyScreenSecurity()
         createNotificationChannel()
         requestNotificationPermission()
+        startMessengerService()
         setContentView(R.layout.activity_main)
 
         containerMessages = findViewById(R.id.container_messages)
@@ -127,6 +128,17 @@ class MainActivity : AppCompatActivity() {
         db = AppDatabase.getInstance(this)
 
         checkAppLock()
+    }
+
+    // L2 Кирпич 1: запуск фонового сервиса. startForegroundService (не startService) —
+    // иначе на Android 8+ упадёт; сервис сам вызывает startForeground в onStartCommand.
+    private fun startMessengerService() {
+        val intent = Intent(this, MessengerService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
     }
 
     // Проверка блокировки приложения при старте
