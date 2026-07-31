@@ -35,7 +35,7 @@ import android.app.PendingIntent
 import android.os.Build
 import androidx.core.app.ActivityCompat
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), MessengerEventHandler {
 
     private lateinit var containerMessages: LinearLayout
     private lateinit var scrollMessages: ScrollView
@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
 
     private var webSocket: WebSocket? = null
+    private var networkManager: NetworkManager? = null
     private var handshakeDone = false
     // С кем сейчас диалог. Пока однодиалоговый режим -> "UNKNOWN".
     // Кирпич 3 заменит на реальный ID из pubkey собеседника при handshake.
@@ -109,6 +110,52 @@ class MainActivity : AppCompatActivity() {
                 ActivityCompat.requestPermissions(
                     this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
             }
+        }
+    }
+
+    // L2 Кирпич 2b Шаг 1: реализация MessengerEventHandler.
+    // Пока только "крючок" — NetworkManager ещё НЕ подключён, старый сокет работает.
+    // Все UI-вызовы обёрнуты в runOnUiThread (callback приходит из IO-корутины менеджера).
+    override fun onStatusChanged(connected: Boolean, reconnects: Int) {
+        isConnected = connected          // зеркало для панели Сеть
+        reconnectAttempts = reconnects
+        runOnUiThread {
+            tvStatus.text = if (connected) getString(R.string.waiting_companion)
+                            else getString(R.string.reconnecting)
+        }
+    }
+    override fun onHandshakeDone(fingerprint: String) {
+        handshakeDone = true             // зеркало для панели Сеть
+        runOnUiThread {
+            tvStatus.text = "\uD83D\uDFE2 E2EE \u0430\u043a\u0442\u0438\u0432\u043d\u043e | ${fingerprint.take(8)}..."
+            addMessage(getString(R.string.handshake_done), isOwn = false)
+            addMessage(getString(R.string.can_send), isOwn = false)
+        }
+    }
+    override fun onSystemMessage(text: String) {
+        val resolved = when (text) {
+            SysMsg.CONNECTED -> getString(R.string.status_connected)
+            SysMsg.DECRYPT_ERROR -> getString(R.string.decrypt_error)
+            else -> text
+        }
+        runOnUiThread { addMessage(resolved, isOwn = false) }
+    }
+    override fun onPeerIdResolved(peerId: String) {
+        currentPeerId = peerId
+        saveLastPeerId(peerId)
+    }
+    override fun onChatReceived(peerId: String, rawDecrypted: String) {
+        runOnUiThread {
+            currentPeerId = peerId
+            saveLastPeerId(peerId)
+            handleDecrypted(peerId, rawDecrypted)
+        }
+    }
+    override fun onInitialHandshakeReceived(peerId: String, content: String) {
+        runOnUiThread {
+            currentPeerId = peerId
+            saveLastPeerId(peerId)
+            handleIncoming(content)
         }
     }
 
@@ -228,7 +275,8 @@ class MainActivity : AppCompatActivity() {
             val fp = CryptoManager.getFingerprint()
             tvStatus.text = getString(R.string.status_connecting, fp.take(8))
         }
-        connectWebSocket()
+        networkManager = NetworkManager(SERVER_URL, client, myStableId, myPubKey, applicationContext, this)
+        networkManager?.connect()
         findViewById<Button>(R.id.btn_send).setOnClickListener {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -580,183 +628,6 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.net_reconnects, reconnectAttempts)
     }
 
-    private fun connectWebSocket() {
-        // Закрываем старое соединение перед созданием нового (анти-дубликат)
-        webSocket?.cancel()
-        webSocket = null
-        val request = Request.Builder().url(SERVER_URL).build()
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-
-            override fun onOpen(ws: WebSocket, response: Response) {
-                isConnected = true
-                reconnectAttempts = 0
-                runOnUiThread {
-                    tvStatus.text = getString(R.string.waiting_companion)
-                    addMessage(getString(R.string.status_connected), isOwn = false)
-                }
-                // Отправляем свой публичный ключ
-                myPubKey?.let { pub ->
-                    val json = JSONObject()
-                    json.put("type", "pubkey")
-                    json.put("key", Base64.encodeToString(pub, Base64.NO_WRAP))
-                    json.put("senderId", myStableId)   // свой постоянный ID для привязки диалога
-                    ws.send(json.toString())
-                }
-                // X3DH: публикуем связку prekeys (тот же senderId — relay свяжет
-                // identity с ключами). Публичные части, приватные остаются в БД.
-                myStableId?.let { sid ->
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        try {
-                            val uploadJson = PrekeyManager.buildUploadJson(this@MainActivity, sid)
-                            ws.send(uploadJson)
-                            android.util.Log.d("PREKEY_MGR", "связка prekeys опубликована на relay")
-                        } catch (e: Exception) {
-                            android.util.Log.e("PREKEY_MGR", "публикация: ${e.message}")
-                        }
-                    }
-                }
-            }
-
-            override fun onMessage(ws: WebSocket, text: String) {
-                try {
-                    val json = JSONObject(text)
-                    if (json.getString("type") == "pubkey") {
-                        val peerPubKey = Base64.decode(
-                            json.getString("key"), Base64.NO_WRAP)
-                        // Стабильный ID собеседника (он сам сообщает) -> привязка диалога.
-                        // Верификация "ID соответствует ключу" (подпись) — отдельный кирпич.
-                        val peerId = json.optString("senderId", "UNKNOWN")
-                        // игнорируем эхо своего же ID (relay шлёт наш pubkey обратно)
-                        if (peerId.isNotEmpty() && peerId != "UNKNOWN" && peerId != myStableId) {
-                            currentPeerId = peerId
-                            saveLastPeerId(peerId)
-                        }
-
-                        // Вычисляем shared key
-                        val result = CryptoManager.computeSharedKey(peerPubKey)
-                        if (result == 0) {
-                            handshakeDone = true
-                            runOnUiThread {
-                                val fp = CryptoManager.getFingerprint()
-                                tvStatus.text = "🟢 E2EE активно | ${fp.take(8)}..."
-                                addMessage(getString(R.string.handshake_done), isOwn = false)
-                                addMessage(getString(R.string.can_send), isOwn = false)
-                            }
-                        }
-                        return
-                    }
-                    // X3DH: ответ со связкой Боба -> собрать первое сообщение
-                    if (json.getString("type") == "prekeys_response") {
-                        val targetId = json.optString("targetId", "")
-                        val text = pendingMessages.remove(targetId)
-                        if (text == null || targetId.isEmpty()) return
-                        if (json.isNull("ik_sign") || json.isNull("ik_dh") || json.isNull("spk")) {
-                            runOnUiThread { addMessage("у $targetId нет ключей на relay", isOwn = false) }
-                            return
-                        }
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            try {
-                                val initJson = SessionManager.buildInitialMessage(
-                                    this@MainActivity, targetId, json, text.toByteArray(Charsets.UTF_8))
-                                if (initJson == null) {
-                                    runOnUiThread { addMessage("не удалось собрать (подпись?)", isOwn = false) }
-                                    return@launch
-                                }
-                                val payloadB64 = Base64.encodeToString(
-                                    initJson.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-                                val envelope = JSONObject().apply {
-                                    put("type", "msg"); put("to", targetId); put("payload", payloadB64)
-                                }.toString()
-                                webSocket?.send(envelope)
-                                android.util.Log.d("X3DH_SEND", "первое сообщение отправлено -> $targetId")
-                                runOnUiThread { addMessage("✓ отправлено (X3DH) $targetId", isOwn = false) }
-                            } catch (e: Exception) {
-                                android.util.Log.e("X3DH_SEND", "ошибка: ${e.message}")
-                            }
-                        }
-                        return
-                    }
-
-                    // К4: адресное сообщение — распаковка конверта {from,to,payload}
-                    if (json.getString("type") == "msg") {
-                        val from = json.optString("from", "UNKNOWN")
-                        val payloadB64 = json.optString("payload", "")
-                        if (payloadB64.isEmpty()) return
-                        val cipherBytes = Base64.decode(payloadB64, Base64.NO_WRAP)
-                        if (cipherBytes.size > 64 * 1024) return   // DoS-лимит
-
-                        // X3DH: payload может быть INITIAL_HANDSHAKE (до handshakeDone)
-                        try {
-                            val inner = JSONObject(String(cipherBytes, Charsets.UTF_8))
-                            if (inner.optString("type") == "INITIAL_HANDSHAKE") {
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    val result = SessionManager.handleInitialMessage(this@MainActivity, inner)
-                                    runOnUiThread {
-                                        if (result.content != null) {
-                                            // peerId из КРИПТОГРАФИИ (ik_sign_a), не из relay-поля from
-                                            currentPeerId = result.peerId
-                                            saveLastPeerId(result.peerId)
-                                            handleIncoming(String(result.content, Charsets.UTF_8))
-                                        } else {
-                                            addMessage(getString(R.string.decrypt_error), isOwn = false)
-                                        }
-                                    }
-                                }
-                                return
-                            }
-                            // Блок 2: последующее сообщение на Kenc (конверт слепой)
-                            if (inner.optString("type") == "CHAT_ENCRYPTED") {
-                                val cipherStr = inner.optString("cipher", "")
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    val result = SessionManager.decryptAnySession(this@MainActivity, cipherStr)
-                                    runOnUiThread {
-                                        if (result?.content != null) {
-                                            // отправитель определён перебором сессий (GCM), не из метаданных
-                                            currentPeerId = result.peerId
-                                            saveLastPeerId(result.peerId)
-                                            handleDecrypted(result.peerId, String(result.content, Charsets.UTF_8))
-                                        } else {
-                                            addMessage(getString(R.string.decrypt_error), isOwn = false)
-                                        }
-                                    }
-                                }
-                                return
-                            }
-                        } catch (_: Exception) { /* не наш JSON -> старый путь */ }
-
-                    }
-                } catch (e: Exception) {
-                    // не JSON
-                }
-            }
-
-
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                isConnected = false
-                handshakeDone = false
-                runOnUiThread {
-                    tvStatus.text = getString(R.string.reconnecting)
-                }
-                scheduleReconnect()
-            }
-
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                isConnected = false
-                handshakeDone = false
-                if (!intentionallyClosed) {
-                    runOnUiThread { tvStatus.text = getString(R.string.reconnecting) }
-                    scheduleReconnect()
-                }
-            }
-        })
-    }
-
-    // Разбор входящего сообщения: явный маркер type, без угадывания.
-    // Совместимость: не-JSON или без "v" => старый чистый CHAT.
-    // Statuses: three cases inside the ciphertext.
-    //   {"a": nonce}      -> receipt: mark DELIVERED, show nothing, do NOT reply
-    //   {"n": .., "t": ..} -> new format: show text, send receipt back
-    //   anything else      -> old format: show as is, no receipt
     private fun handleDecrypted(peerId: String, raw: String) {
         try {
             val j = JSONObject(raw)
@@ -805,7 +676,7 @@ class MainActivity : AppCompatActivity() {
             val envelope = JSONObject().apply {
                 put("type", "msg"); put("to", targetId); put("payload", payloadB64)
             }.toString()
-            webSocket?.send(envelope)
+            networkManager?.sendJson(envelope)
             android.util.Log.d("ACK", "sent -> $targetId nonce=${nonce.take(8)}")
         }
     }
@@ -933,18 +804,18 @@ class MainActivity : AppCompatActivity() {
                     val envelope = JSONObject().apply {
                         put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                     }.toString()
-                    webSocket?.send(envelope)
+                    networkManager?.sendJson(envelope)
                     android.util.Log.d("X3DH_SEND", "CHAT_ENCRYPTED -> $targetId")
                 } else {
                     runOnUiThread { addMessage("ошибка шифрования", isOwn = false) }
                 }
             } else {
                 // сессии нет -> X3DH: очередь + запрос prekeys
-                pendingMessages[targetId] = plaintext
+                networkManager?.stashPending(targetId, plaintext)
                 val req = JSONObject().apply {
                     put("type", "prekeys_request"); put("targetId", targetId)
                 }.toString()
-                webSocket?.send(req)
+                networkManager?.sendJson(req)
                 android.util.Log.d("X3DH_SEND", "prekeys_request -> $targetId")
             }
         }
@@ -990,7 +861,7 @@ class MainActivity : AppCompatActivity() {
             put("to", currentPeerId)
             put("payload", payloadB64)
         }.toString()
-        webSocket?.send(envelope)
+        networkManager?.sendJson(envelope)
     }
 
     // Отправка игрового события (ход/игровой чат) в той же E2EE-обёртке
@@ -1058,25 +929,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun scheduleReconnect() {
-        if (intentionallyClosed) return
-        if (isConnected) return
-        reconnectHandler.removeCallbacksAndMessages(null)
-        val delaySec = minOf(1 shl reconnectAttempts, 16)
-        reconnectAttempts++
-        reconnectHandler.postDelayed({
-            if (!isConnected && !intentionallyClosed) {
-                connectWebSocket()
-            }
-        }, delaySec * 1000L)
-    }
 
     override fun onResume() {
         super.onResume()
         isAppForeground = true
         intentionallyClosed = false
-        if (!isConnected && webSocket == null) {
-            connectWebSocket()
+        if (!isConnected) {
+            networkManager?.connect()
         }
     }
     override fun onPause() {
@@ -1088,7 +947,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         intentionallyClosed = true
         reconnectHandler.removeCallbacksAndMessages(null)
-        webSocket?.close(1000, "App closed")
+        networkManager?.disconnect()
         client.dispatcher.executorService.shutdown()
     }
 }
