@@ -8,13 +8,43 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 // L2 Кирпич 1: минимальный foreground service — СКЕЛЕТ.
 // Пока только живёт (startForeground + уведомление). Сокет перенесём Кирпичом 2.
 // Цель: доказать, что процесс переживает сворачивание/закрытие приложения.
 class MessengerService : Service() {
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    // L2 Кирпич 2c: сервис владеет движком; Activity регистрируется как ЖИВОЙ слушатель.
+    private var networkManager: NetworkManager? = null
+    private var activityHandler: MessengerEventHandler? = null
+    private val binder = LocalBinder()
+
+    inner class LocalBinder : android.os.Binder() {
+        fun getService(): MessengerService = this@MessengerService
+    }
+
+    // Activity зовёт при старте: "я жива, шли события и мне тоже"
+    fun registerActivity(handler: MessengerEventHandler) { activityHandler = handler }
+    // Activity зовёт при уходе: "забудь про меня" (защита от утечки)
+    fun unregisterActivity() { activityHandler = null }
+
+    // L2 Кирпич 2c-1: сервис САМ поднимает крипто и клиент — не зависит от Activity.
+    private val serviceClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .build()
+    }
+    private var myStableId: String = ""
+    private var myPubKey: ByteArray? = null
+
+    private fun prepareCrypto() {
+        myStableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(applicationContext)
+        myPubKey = CryptoManager.generateKeypair()
+    }
+
+    override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(SERVICE_NOTIF_ID, buildServiceNotification())
