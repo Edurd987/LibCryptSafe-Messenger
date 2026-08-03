@@ -446,6 +446,17 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
         val toast = { android.widget.Toast.makeText(this, getString(R.string.game_dev), android.widget.Toast.LENGTH_SHORT).show() }
         findViewById<LinearLayout>(R.id.card_chess).setOnClickListener { toast() }
         findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener {
+            // Нарды Кирпич 3 (ВРЕМЕННО): тестовый импульс для проверки трубы на железе.
+            // Заменим настоящей кнопкой "пригласить" когда труба доказана.
+            if (currentPeerId != "UNKNOWN") {
+                val testInvite = JSONObject().apply {
+                    put("v", 1)
+                    put("type", "GAME_INVITE")
+                    put("gameId", "test_" + System.currentTimeMillis())
+                    put("seq", 0)
+                }.toString()
+                sendGameEvent(currentPeerId, testInvite)
+            }
             startActivity(android.content.Intent(this, GameActivity::class.java))
         }
         findViewById<LinearLayout>(R.id.card_go).setOnClickListener { toast() }
@@ -782,6 +793,30 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
 
     // Блок 3: единый узел отправки. Клик по контакту ставит currentPeerId,
     // поле ввода зовёт sendToPeer(currentPeerId, text) — команда /to больше не нужна.
+    // Нарды Кирпич 2: отправка игрового события через ТОТ ЖЕ шифр-туннель, что и чат,
+    // но БЕЗ чат-обёртки (n/t) и БЕЗ addMessage — game-JSON шифруется как есть.
+    // gameJson уже содержит {v:1, type:"GAME_...", gameId, seq, ...} на верхнем уровне,
+    // чтобы труба в handleDecrypted увидела type сразу после расшифровки.
+    fun sendGameEvent(targetId: String, gameJson: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val session = db.sessionDao().getSession(targetId)
+            if (session == null) {
+                android.util.Log.w("GAME_SEND", "\u043d\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u0438 \u0441 $targetId")
+                return@launch
+            }
+            val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, gameJson)
+            if (pkt != null) {
+                val payloadB64 = Base64.encodeToString(
+                    pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                val envelope = JSONObject().apply {
+                    put("type", "msg"); put("to", targetId); put("payload", payloadB64)
+                }.toString()
+                networkManager?.sendJson(envelope)
+                android.util.Log.i("GAME_SEND", "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435 -> $targetId")
+            }
+        }
+    }
+
     private fun sendToPeer(targetId: String, plaintext: String) {
         // Статусы доставки: случайный непрозрачный маркер сообщения.
         // НЕ локальный id БД (тот глобальный счётчик — выдал бы собеседнику
