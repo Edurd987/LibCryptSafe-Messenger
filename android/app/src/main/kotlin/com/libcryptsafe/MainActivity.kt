@@ -640,6 +640,16 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
                     return
                 }
                 v == 1 -> {
+                    // Игровая труба: зашифрованное игровое событие роутится в игру, НЕ в чат.
+                    // Relay видит только CHAT_ENCRYPTED — игра неотличима от сообщения.
+                    val type = j.optString("type", "")
+                    if (type.startsWith("GAME_")) {
+                        val gameId = j.optString("gameId", "")
+                        val seq = j.optInt("seq", -1)
+                        android.util.Log.i("GAME_PIPE",
+                            "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435: $type game=$gameId seq=$seq")
+                        return
+                    }
                     val ack = j.optString("a", "")
                     if (ack.isNotEmpty()) { markDelivered(ack); return }
                     val n = j.optString("n", "")
@@ -763,14 +773,6 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
                 val text = json.optString("text", "")
                 addMessage(text, isOwn = false, persist = true)
                 notifyIncoming()
-            }
-            "GAME_MOVE", "GAME_CHAT" -> {
-                // Движка игр пока нет — заглушка. Валидируем gameId.
-                val gameId = json.optString("gameId", "")
-                if (gameId.isEmpty() || gameId.length > 64) return
-                val payload = json.optString("payload", "")
-                android.util.Log.i("GAME_PROTO", "Game event: ${json.optString("type")} game=$gameId len=${payload.length}")
-                // TODO: направить в движок игры когда он появится
             }
             else -> {
                 // неизвестный тип => игнор (не падаем, не доверяем сети)
