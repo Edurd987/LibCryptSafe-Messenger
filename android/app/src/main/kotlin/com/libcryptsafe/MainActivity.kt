@@ -35,7 +35,7 @@ import android.app.PendingIntent
 import android.os.Build
 import androidx.core.app.ActivityCompat
 
-class MainActivity : AppCompatActivity(), MessengerEventHandler {
+class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
 
     private lateinit var containerMessages: LinearLayout
     private lateinit var scrollMessages: ScrollView
@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
     // С кем сейчас диалог. Пока однодиалоговый режим -> "UNKNOWN".
     // Кирпич 3 заменит на реальный ID из pubkey собеседника при handshake.
     private var currentPeerId = "UNKNOWN"
+    private val gameManager = GameManager(this).also { GameManager.INSTANCE = it }
 
     // Persist: запомнить последний диалог (для восстановления при перезапуске)
     private fun saveLastPeerId(peerId: String) {
@@ -157,6 +158,42 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
             saveLastPeerId(peerId)
             handleIncoming(content)
         }
+    }
+
+    // === Нарды Кирпич 4а: реализация GameCallback (мост GameManager <-> UI/сеть) ===
+    override fun onSendGameEvent(targetPeerId: String, gameJson: String) {
+        sendGameEvent(targetPeerId, gameJson)
+    }
+    override fun onInviteReceived(fromPeerId: String) {
+        runOnUiThread {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("\u041d\u0430\u0440\u0434\u044b")
+                .setMessage("\u041f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435 \u0432 \u0438\u0433\u0440\u0443 \u043e\u0442 $fromPeerId")
+                .setPositiveButton("\u041f\u0440\u0438\u043d\u044f\u0442\u044c") { _, _ -> gameManager.acceptInvite() }
+                .setNegativeButton("\u041e\u0442\u043a\u043b\u043e\u043d\u0438\u0442\u044c") { _, _ -> gameManager.declineInvite() }
+                .setCancelable(false)
+                .show()
+        }
+    }
+    override fun onGameStarted(peerId: String, gameId: String) {
+        runOnUiThread {
+            android.widget.Toast.makeText(this, "\u041f\u0430\u0440\u0442\u0438\u044f \u043d\u0430\u0447\u0430\u043b\u0430\u0441\u044c", android.widget.Toast.LENGTH_SHORT).show()
+            android.util.Log.i("GAME_MGR", "\u041f\u0430\u0440\u0442\u0438\u044f ACTIVE game=$gameId peer=$peerId")
+            startActivity(android.content.Intent(this, GameActivity::class.java))
+        }
+    }
+    override fun onOpponentLeft() {
+        runOnUiThread {
+            android.widget.Toast.makeText(this, "\u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a \u043f\u043e\u043a\u0438\u043d\u0443\u043b \u0438\u0433\u0440\u0443", android.widget.Toast.LENGTH_LONG).show()
+            // через 2 сек закрыть экран игры у второго игрока -> вернётся в меню, готов к новому приглашению
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                GameActivity.CURRENT?.finish()
+            }, 2000)
+        }
+    }
+
+    override fun onGameSystemMessage(text: String) {
+        runOnUiThread { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show() }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -446,18 +483,23 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
         val toast = { android.widget.Toast.makeText(this, getString(R.string.game_dev), android.widget.Toast.LENGTH_SHORT).show() }
         findViewById<LinearLayout>(R.id.card_chess).setOnClickListener { toast() }
         findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener {
-            // Нарды Кирпич 3 (ВРЕМЕННО): тестовый импульс для проверки трубы на железе.
-            // Заменим настоящей кнопкой "пригласить" когда труба доказана.
-            if (currentPeerId != "UNKNOWN") {
-                val testInvite = JSONObject().apply {
-                    put("v", 1)
-                    put("type", "GAME_INVITE")
-                    put("gameId", "test_" + System.currentTimeMillis())
-                    put("seq", 0)
-                }.toString()
-                sendGameEvent(currentPeerId, testInvite)
-            }
-            startActivity(android.content.Intent(this, GameActivity::class.java))
+            // Кирпич 5а: разделение режимов. Офлайн (локально/бот) НЕ трогает сеть;
+            // онлайн идёт через GameManager (труба).
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("\u041d\u0430\u0440\u0434\u044b")
+                .setItems(arrayOf(
+                    "\u041b\u043e\u043a\u0430\u043b\u044c\u043d\u043e (\u043e\u0444\u043b\u0430\u0439\u043d)",
+                    "\u041f\u0440\u0438\u0433\u043b\u0430\u0441\u0438\u0442\u044c \u0434\u0440\u0443\u0433\u0430 (\u043e\u043d\u043b\u0430\u0439\u043d)"
+                )) { _, which ->
+                    when (which) {
+                        0 -> startActivity(android.content.Intent(this, GameActivity::class.java))
+                        1 -> {
+                            if (currentPeerId != "UNKNOWN") gameManager.sendInvite(currentPeerId)
+                            else android.widget.Toast.makeText(this, "\u0441\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u044b\u0431\u0435\u0440\u0438 \u043a\u043e\u043d\u0442\u0430\u043a\u0442", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                .show()
         }
         findViewById<LinearLayout>(R.id.card_go).setOnClickListener { toast() }
     }
@@ -655,10 +697,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler {
                     // Relay видит только CHAT_ENCRYPTED — игра неотличима от сообщения.
                     val type = j.optString("type", "")
                     if (type.startsWith("GAME_")) {
-                        val gameId = j.optString("gameId", "")
-                        val seq = j.optInt("seq", -1)
-                        android.util.Log.i("GAME_PIPE",
-                            "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435: $type game=$gameId seq=$seq")
+                        gameManager.handleGameEvent(peerId, j)
                         return
                     }
                     val ack = j.optString("a", "")

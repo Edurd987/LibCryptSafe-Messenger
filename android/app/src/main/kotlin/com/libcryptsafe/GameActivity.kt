@@ -10,7 +10,9 @@ class GameActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game)
+        CURRENT = this
         findViewById<TextView>(R.id.btn_exit_game).setOnClickListener {
+            GameManager.INSTANCE?.endGame()   // онлайн: сброс + GAME_END сопернику; офлайн: no-op
             finish()
         }
         chooseMode()
@@ -31,5 +33,14 @@ class GameActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (CURRENT === this) CURRENT = null
+    }
+
+    companion object {
+        @Volatile var CURRENT: GameActivity? = null
     }
 }
