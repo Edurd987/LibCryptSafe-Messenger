@@ -182,6 +182,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             startActivity(android.content.Intent(this, GameActivity::class.java))
         }
     }
+    override fun onRemoteMove(from: Int, to: Int) {
+        runOnUiThread { GameActivity.CURRENT?.applyRemoteMove(from, to) }
+    }
+    override fun onRemoteRoll(a: Int, b: Int) {
+        runOnUiThread { GameActivity.CURRENT?.applyRemoteRoll(a, b) }
+    }
+
     override fun onOpponentLeft() {
         runOnUiThread {
             android.widget.Toast.makeText(this, "\u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a \u043f\u043e\u043a\u0438\u043d\u0443\u043b \u0438\u0433\u0440\u0443", android.widget.Toast.LENGTH_LONG).show()

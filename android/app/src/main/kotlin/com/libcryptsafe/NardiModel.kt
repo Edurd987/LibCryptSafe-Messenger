@@ -95,6 +95,12 @@ fun rollDice(state: NardiGameState): NardiGameState {
     val b = (1..6).random()
     val dice = if (a == b) listOf(a, a, a, a) else listOf(a, b)  // дубль -> 4 хода
     return state.copy(dice = dice)
+}
+
+// Сетевой приём броска: соперник прислал кости — ставим их БЕЗ генерации.
+fun applyRoll(state: NardiGameState, a: Int, b: Int): NardiGameState {
+    val dice = if (a == b) listOf(a, a, a, a) else listOf(a, b)
+    return state.copy(dice = dice)
 }
 
 

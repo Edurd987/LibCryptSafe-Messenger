@@ -15,7 +15,33 @@ class GameActivity : AppCompatActivity() {
             GameManager.INSTANCE?.endGame()   // онлайн: сброс + GAME_END сопернику; офлайн: no-op
             finish()
         }
-        chooseMode()
+        setupGame()
+    }
+
+    // Развилка режимов: онлайн (GameManager ACTIVE) настраивает сеть без диалога;
+    // офлайн — прежний выбор Вдвоём/Бот.
+    private fun setupGame() {
+        val board = findViewById<NardiBoardView>(R.id.nardi_board)
+        val mgr = GameManager.INSTANCE
+        if (mgr != null && mgr.state == GameManager.State.ACTIVE) {
+            // ОНЛАЙН: board = истина, труба через onMoveMade; бот выключен.
+            board.isOnlineMode = true
+            board.myColor = mgr.myColor
+            board.botEnabled = false
+            board.startOnlineGame()
+            board.onMoveMade = { from, to -> GameManager.INSTANCE?.sendMove(from, to) }
+            board.onRollMade = { a, b -> GameManager.INSTANCE?.sendRoll(a, b) }
+        } else {
+            chooseMode()   // офлайн — как раньше
+        }
+    }
+
+    // Ход соперника из трубы -> на доску, которую видит игрок.
+    fun applyRemoteMove(from: Int, to: Int) {
+        findViewById<NardiBoardView>(R.id.nardi_board)?.applyRemoteMove(from, to)
+    }
+    fun applyRemoteRoll(a: Int, b: Int) {
+        findViewById<NardiBoardView>(R.id.nardi_board)?.applyRemoteRoll(a, b)
     }
 
     private fun chooseMode() {

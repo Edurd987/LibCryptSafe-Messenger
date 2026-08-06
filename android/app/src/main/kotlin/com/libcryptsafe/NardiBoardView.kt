@@ -31,6 +31,43 @@ class NardiBoardView @JvmOverloads constructor(
     // ===== РЕЖИМ БОТА =====
     var botEnabled: Boolean = false               // играем против бота?
     var botColor: PlayerType = PlayerType.BLACK   // цвет бота
+
+    // ===== СЕТЕВОЙ РЕЖИМ (Кирпич 6) =====
+    var isOnlineMode: Boolean = false             // сетевая партия?
+    var myColor: PlayerType = PlayerType.WHITE    // мой цвет в сетевой партии
+    // Callback: локальный игрок сделал легальный ход -> отправить в трубу
+    var onMoveMade: ((from: Int, to: Int) -> Unit)? = null
+    // Callback: локальный игрок бросил кости -> отправить сопернику (ROLL)
+    var onRollMade: ((a: Int, b: Int) -> Unit)? = null
+
+    // Входное окно: применить ход соперника, пришедший по сети.
+    // Меняет state и перерисовывает — БЕЗ повторной отправки в трубу.
+    fun applyRemoteMove(from: Int, to: Int) {
+        val dist = moveDistance(state.turn, from, to)
+        if (isLegalMove(state, from, to)) {
+            state = applyMove(state, from, to)
+            state = consumeDie(state, dist)
+            if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+            if (winner(state) != null) { gameOver = true; showWinBanner() }
+            invalidate()
+        } else {
+            android.util.Log.e("NARDI_NET", "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0445\u043e\u0434 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from->$to")
+            // HARD STOP по маяку — нелегальный ход соперника = Data Integrity
+        }
+    }
+
+    // Старт сетевой партии: обход розыгрыша ОДИН раз (WHITE ходит первым, MVP).
+    fun startOnlineGame() {
+        state = state.copy(isOpening = false, turn = PlayerType.WHITE)
+        invalidate()
+    }
+
+    // Входное окно: применить бросок соперника (кости), пришедший по сети.
+    fun applyRemoteRoll(a: Int, b: Int) {
+        state = applyRoll(state, a, b)
+        if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+        invalidate()
+    }
     private val botHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     // Ход бота: бросает зары (если надо) и делает один шаг; планирует следующий.
@@ -189,6 +226,10 @@ class NardiBoardView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
         if (gameOver) return true                   // партия окончена -> ввод заблокирован
+        // Кирпич 6.1: в сетевой партии ходить (и бросать) можно ТОЛЬКО в свой ход.
+        // Блокируем ВЕСЬ ввод в чужой ход, включая бар-бросок — иначе локальное
+        // изменение state рассинхронит доски. Бросок синхронизируется отдельно (ROLL).
+        if (isOnlineMode && state.turn != myColor) return true
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
             // Тап по бару -> бросок заров (выбор пунктов не трогаем)
             if (isInBar(event.x, event.y)) {
@@ -197,6 +238,9 @@ class NardiBoardView @JvmOverloads constructor(
                         state = rollOpening(state)  // розыгрыш первого хода
                     } else {
                         state = rollDice(state)
+                        // Кирпич 6.4: бросок -> сопернику (только онлайн). dice=[a,b] или [a,a,a,a].
+                        val d = state.dice
+                        if (isOnlineMode && d != null && d.size >= 2) onRollMade?.invoke(d[0], d[1])
                         if (!hasAnyLegalMove(state)) state = burnTurn(state)
                     }
                 }
@@ -233,6 +277,8 @@ class NardiBoardView @JvmOverloads constructor(
                         val dist = moveDistance(mover, from, clicked)  // дистанция по маршруту
                         state = applyMove(state, from, clicked)
                         state = consumeDie(state, dist)         // потратить использованный зар
+                        // Кирпич 6.2: состоявшийся ход -> в трубу (только онлайн).
+                        if (isOnlineMode) onMoveMade?.invoke(from, clicked)
                         if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
                     }
                     selectedPoint = null                        // легален или нет -> снять выбор
