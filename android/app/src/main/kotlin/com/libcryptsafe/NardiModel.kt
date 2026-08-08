@@ -135,26 +135,24 @@ private fun creates6Block(board: List<PointState>, player: PlayerType): Boolean 
         if (pt.player == player && pt.count >= 1) {
             chain++
             if (chain >= 6) {
-                // стена из 6 от route[pos-5] до route[pos].
-                // запрещаем, только если ВПЕРЕДИ стены (дальше по маршруту соперника)
-                // нет шашек соперника, способных её обойти.
-                // Упрощение: если у соперника НЕТ шашек перед началом стены — он заперт.
-                val wallStartPos = pos - 5
-                // позиции соперника в ЕГО маршруте, которые "позади" стены
+                // Физические пункты стены: route[pos-5..pos].
+                val wallPoints = (pos - 5..pos).map { route[it] }.toSet()
+                // Позиция стены в МАРШРУТЕ СОПЕРНИКА (единая система координат).
                 val oppRoute = routeFor(opp)
-                var oppBehind = false
+                val wallPosInOpp = wallPoints.map { oppRoute.indexOf(it) }.filter { it >= 0 }
+                val wallStartInOpp = wallPosInOpp.minOrNull() ?: -1
+                // Есть ли у соперника шашка ВПЕРЕДИ стены по ЕГО маршруту (может обойти)?
+                var oppHasWayOut = false
                 for (i in 0..23) {
                     val op = board[i]
-                    if (op.player == opp && op.count > 0) {
-                        // шашка соперника позади стены = ещё не прошла зону блока
+                    if (op.player == opp && op.count > 0 && i !in wallPoints) {
                         val oppPos = oppRoute.indexOf(i)
-                        // грубая проверка: соперник имеет шашки на доске вне зоны стены
-                        oppBehind = true
-                        break
+                        // фишка дальше начала стены по маршруту соперника = уже прошла её
+                        if (oppPos > wallStartInOpp) { oppHasWayOut = true; break }
                     }
                 }
-                // если у соперника вообще есть шашки на доске — блок 6 запрещаем
-                if (oppBehind) return true
+                // Заперт (нет пути в обход) -> запрещаем стену.
+                if (!oppHasWayOut) return true
             }
         } else {
             chain = 0
