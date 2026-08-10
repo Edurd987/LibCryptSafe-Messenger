@@ -36,17 +36,16 @@ class NardiBoardView @JvmOverloads constructor(
     var isOnlineMode: Boolean = false             // сетевая партия?
     var myColor: PlayerType = PlayerType.WHITE    // мой цвет в сетевой партии
     // Callback: локальный игрок сделал легальный ход -> отправить в трубу
-    var onMoveMade: ((from: Int, to: Int) -> Unit)? = null
+    var onMoveMade: ((from: Int, to: Int, die: Int) -> Unit)? = null
     // Callback: локальный игрок бросил кости -> отправить сопернику (ROLL)
     var onRollMade: ((a: Int, b: Int) -> Unit)? = null
 
     // Входное окно: применить ход соперника, пришедший по сети.
     // Меняет state и перерисовывает — БЕЗ повторной отправки в трубу.
-    fun applyRemoteMove(from: Int, to: Int) {
-        val dist = moveDistance(state.turn, from, to)
+    fun applyRemoteMove(from: Int, to: Int, die: Int) {
         if (isLegalMove(state, from, to)) {
             state = applyMove(state, from, to)
-            state = consumeDie(state, dist)
+            state = consumeDie(state, die)   // тратим ПЕРЕДАННУЮ кость, не угадываем
             if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
             if (winner(state) != null) { gameOver = true; showWinBanner() }
             invalidate()
@@ -278,7 +277,7 @@ class NardiBoardView @JvmOverloads constructor(
                         state = applyMove(state, from, clicked)
                         state = consumeDie(state, dist)         // потратить использованный зар
                         // Кирпич 6.2: состоявшийся ход -> в трубу (только онлайн).
-                        if (isOnlineMode) onMoveMade?.invoke(from, clicked)
+                        if (isOnlineMode) onMoveMade?.invoke(from, clicked, dist)
                         if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
                     }
                     selectedPoint = null                        // легален или нет -> снять выбор

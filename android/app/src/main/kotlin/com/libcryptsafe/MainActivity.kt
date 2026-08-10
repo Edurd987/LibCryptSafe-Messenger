@@ -182,8 +182,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             startActivity(android.content.Intent(this, GameActivity::class.java))
         }
     }
-    override fun onRemoteMove(from: Int, to: Int) {
-        runOnUiThread { GameActivity.CURRENT?.applyRemoteMove(from, to) }
+    override fun onRemoteMove(from: Int, to: Int, die: Int) {
+        runOnUiThread { GameActivity.CURRENT?.applyRemoteMove(from, to, die) }
     }
     override fun onRemoteRoll(a: Int, b: Int) {
         runOnUiThread { GameActivity.CURRENT?.applyRemoteRoll(a, b) }

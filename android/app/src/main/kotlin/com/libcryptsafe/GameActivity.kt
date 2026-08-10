@@ -29,7 +29,7 @@ class GameActivity : AppCompatActivity() {
             board.myColor = mgr.myColor
             board.botEnabled = false
             board.startOnlineGame()
-            board.onMoveMade = { from, to -> GameManager.INSTANCE?.sendMove(from, to) }
+            board.onMoveMade = { from, to, die -> GameManager.INSTANCE?.sendMove(from, to, die) }
             board.onRollMade = { a, b -> GameManager.INSTANCE?.sendRoll(a, b) }
         } else {
             chooseMode()   // офлайн — как раньше
@@ -37,8 +37,8 @@ class GameActivity : AppCompatActivity() {
     }
 
     // Ход соперника из трубы -> на доску, которую видит игрок.
-    fun applyRemoteMove(from: Int, to: Int) {
-        findViewById<NardiBoardView>(R.id.nardi_board)?.applyRemoteMove(from, to)
+    fun applyRemoteMove(from: Int, to: Int, die: Int) {
+        findViewById<NardiBoardView>(R.id.nardi_board)?.applyRemoteMove(from, to, die)
     }
     fun applyRemoteRoll(a: Int, b: Int) {
         findViewById<NardiBoardView>(R.id.nardi_board)?.applyRemoteRoll(a, b)
