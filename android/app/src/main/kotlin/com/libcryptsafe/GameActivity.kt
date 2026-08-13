@@ -1,4 +1,5 @@
 package com.libcryptsafe
+import com.libcryptsafe.PlayerType
 import android.os.Bundle
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -23,17 +24,23 @@ class GameActivity : AppCompatActivity() {
     private fun setupGame() {
         val board = findViewById<NardiBoardView>(R.id.nardi_board)
         val mgr = GameManager.INSTANCE
-        if (mgr != null && mgr.state == GameManager.State.ACTIVE) {
-            // ОНЛАЙН: board = истина, труба через onMoveMade; бот выключен.
+        // Онлайн: партия в OPENING (идёт розыгрыш) ИЛИ уже ACTIVE.
+        if (mgr != null && (mgr.state == GameManager.State.OPENING || mgr.state == GameManager.State.ACTIVE)) {
+            // ОНЛАЙН: настраиваем доску, но НЕ стартуем — ждём onOpeningDone (честный розыгрыш).
             board.isOnlineMode = true
             board.myColor = mgr.myColor
             board.botEnabled = false
-            board.startOnlineGame()
             board.onMoveMade = { from, to, die -> GameManager.INSTANCE?.sendMove(from, to, die) }
             board.onRollMade = { a, b -> GameManager.INSTANCE?.sendRoll(a, b) }
+            // turn придёт из розыгрыша через startOnlineGameWithTurn (НЕ форсим WHITE)
         } else {
             chooseMode()   // офлайн — как раньше
         }
+    }
+
+    // Розыгрыш Маяк 4 завершён: стартуем доску с определённым первым ходом.
+    fun startOnlineGameWithTurn(first: PlayerType) {
+        findViewById<NardiBoardView>(R.id.nardi_board)?.startOnlineGame(first)
     }
 
     // Ход соперника из трубы -> на доску, которую видит игрок.

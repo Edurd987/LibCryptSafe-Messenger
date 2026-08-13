@@ -14,6 +14,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import android.os.Handler
 import android.os.Looper
+import com.libcryptsafe.PlayerType
 import com.libcryptsafe.db.AppDatabase
 import com.libcryptsafe.db.MessageEntity
 import androidx.lifecycle.lifecycleScope
@@ -183,6 +184,10 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             android.util.Log.i("GAME_MGR", "\u041f\u0430\u0440\u0442\u0438\u044f ACTIVE game=$gameId peer=$peerId")
             startActivity(android.content.Intent(this, GameActivity::class.java))
         }
+    }
+
+    override fun onOpeningDone(first: PlayerType) {
+        runOnUiThread { GameActivity.CURRENT?.startOnlineGameWithTurn(first) }
     }
     override fun onRemoteMove(from: Int, to: Int, die: Int) {
         runOnUiThread { GameActivity.CURRENT?.applyRemoteMove(from, to, die) }

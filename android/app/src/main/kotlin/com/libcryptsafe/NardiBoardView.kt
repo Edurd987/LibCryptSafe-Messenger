@@ -68,8 +68,8 @@ class NardiBoardView @JvmOverloads constructor(
     }
 
     // Старт сетевой партии: обход розыгрыша ОДИН раз (WHITE ходит первым, MVP).
-    fun startOnlineGame() {
-        state = state.copy(isOpening = false, turn = PlayerType.WHITE)
+    fun startOnlineGame(first: PlayerType) {
+        state = state.copy(isOpening = false, turn = first)   // turn из честного розыгрыша
         invalidate()
     }
 
@@ -241,6 +241,7 @@ class NardiBoardView @JvmOverloads constructor(
         // Блокируем ВЕСЬ ввод в чужой ход, включая бар-бросок — иначе локальное
         // изменение state рассинхронит доски. Бросок синхронизируется отдельно (ROLL).
         // Кирпич 1.5: связь мертва -> блокируем ВЕСЬ ввод (не даём ходу уйти в мёртвую трубу).
+        if (isOnlineMode && state.isOpening) return true   // розыгрыш ещё идёт — ввод заблокирован
         if (isOnlineMode && !isConnected) return true
         if (isOnlineMode && state.turn != myColor) return true
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {

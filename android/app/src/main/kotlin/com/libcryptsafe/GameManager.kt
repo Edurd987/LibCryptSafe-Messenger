@@ -1,19 +1,27 @@
 package com.libcryptsafe
 
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.security.SecureRandom
 
 // Нарды: "мозг" онлайн-игры. Чистая логика + состояния, НЕ знает про View.
 // Труба (handleDecrypted в MainActivity) зовёт handleGameEvent.
 // Обратно к UI/сети — через GameCallback. INSTANCE — чтобы GameActivity звала endGame.
 class GameManager(private val callback: GameCallback) {
 
-    enum class State { IDLE, INVITING, INVITED, ACTIVE }
+    enum class State { IDLE, INVITING, INVITED, OPENING, ACTIVE }
 
     var state: State = State.IDLE; private set
     var peerId: String = ""; private set
     var gameId: String = ""; private set
     private var model: NardiGameState? = null
     var myColor: PlayerType = PlayerType.WHITE; private set   // мой цвет в сетевой партии
+    // Маяк 4: честный розыгрыш первого хода (commit-reveal)
+    private enum class OpeningPhase { NONE, WAIT_PEER_COMMIT, WAIT_PEER_REVEAL, DONE }
+    private var openingPhase = OpeningPhase.NONE
+    private var myOpeningDie = 0
+    private var myOpeningSalt = ""      // hex
+    private var peerCommitHash = ""     // hex, хэш соперника (сохраняем на фазе commit)
     private var outgoingSeq: Int = 0                          // мой счётчик исходящих событий
     private var expectedSeq: Int = 0                          // жду от соперника этот seq
     private val eventBuffer = mutableListOf<Pair<Int, JSONObject>>()  // ранние события (seq > expected)
@@ -38,6 +46,8 @@ class GameManager(private val callback: GameCallback) {
         when (json.optString("type")) {
             "GAME_INVITE" -> onInviteReceived(fromPeerId, json)
             "GAME_ACCEPT" -> onAcceptReceived(fromPeerId, json)
+            "GAME_OPEN_COMMIT" -> onOpenCommitReceived(fromPeerId, json)
+            "GAME_OPEN_REVEAL" -> onOpenRevealReceived(fromPeerId, json)
             "GAME_END" -> onEndReceived(fromPeerId, json)
             "GAME_MOVE" -> onMoveReceived(fromPeerId, json)
             "GAME_ROLL" -> onRollReceived(fromPeerId, json)
@@ -76,9 +86,98 @@ class GameManager(private val callback: GameCallback) {
 
     private fun startGame() {
         model = initLongNardi()
-        state = State.ACTIVE
+        state = State.OPENING                 // сначала розыгрыш, НЕ ACTIVE
         callback.onGameStarted(peerId, gameId)
+        startOpeningRoll()                    // оба игрока одновременно шлют commit
     }
+
+    // Маяк 4: генерю свою кость+соль, шлю commit (hash), жду commit соперника.
+    private fun startOpeningRoll() {
+        myOpeningDie = (1..6).random()
+        val saltBytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        myOpeningSalt = saltBytes.toHex()
+        val hash = sha256(byteArrayOf(myOpeningDie.toByte()) + saltBytes)
+        val commit = JSONObject().apply {
+            put("v", 1); put("type", "GAME_OPEN_COMMIT"); put("gameId", gameId)
+            put("owner", myColor.name); put("hash", hash)
+        }.toString()
+        callback.onSendGameEvent(peerId, commit)
+        openingPhase = OpeningPhase.WAIT_PEER_COMMIT
+        android.util.Log.i("GAME_SEQ", "OPEN -> COMMIT hash=${hash.take(12)}...")
+    }
+
+    // Приём commit соперника: сохраняю его хэш (кирпич 2 пошлёт reveal).
+    private fun onOpenCommitReceived(fromPeerId: String, json: JSONObject) {
+        if (state != State.OPENING) return
+        if (fromPeerId != peerId) return
+        if (json.optString("gameId", "") != gameId) return
+        val owner = json.optString("owner", "")
+        if (owner == myColor.name) return     // своё эхо (защита)
+        peerCommitHash = json.optString("hash", "")
+        android.util.Log.i("GAME_SEQ", "OPEN <- COMMIT peer hash=${peerCommitHash.take(12)}...")
+        sendOpenReveal()
+    }
+
+    // Шлю свою кость+соль (reveal) — только ПОСЛЕ получения commit соперника.
+    private fun sendOpenReveal() {
+        openingPhase = OpeningPhase.WAIT_PEER_REVEAL
+        val reveal = JSONObject().apply {
+            put("v", 1); put("type", "GAME_OPEN_REVEAL"); put("gameId", gameId)
+            put("owner", myColor.name); put("die", myOpeningDie); put("salt", myOpeningSalt)
+        }.toString()
+        callback.onSendGameEvent(peerId, reveal)
+        android.util.Log.i("GAME_SEQ", "OPEN -> REVEAL die=$myOpeningDie")
+    }
+
+    private fun onOpenRevealReceived(fromPeerId: String, json: JSONObject) {
+        if (state != State.OPENING) return
+        if (fromPeerId != peerId) return
+        if (json.optString("gameId", "") != gameId) return
+        val owner = json.optString("owner", "")
+        if (owner == myColor.name) return                    // своё эхо
+        // ЗАЩИТА: reveal без предшествующего commit -> отвергаем (атака "проскочить commit")
+        if (peerCommitHash.isEmpty()) {
+            android.util.Log.e("NARDI_NET", "OPEN reveal БЕЗ commit — отвергнут")
+            return
+        }
+        val peerDie = json.optInt("die", 0)
+        val peerSalt = json.optString("salt", "")
+        if (peerDie < 1 || peerDie > 6 || peerSalt.isEmpty()) return
+        // ВЕРИФИКАЦИЯ: хэш раскрытого совпадает с commit соперника?
+        val check = sha256(byteArrayOf(peerDie.toByte()) + peerSalt.hexToBytes())
+        if (check != peerCommitHash) {
+            android.util.Log.e("NARDI_NET", "OPEN ПОДТАСОВКА! hash mismatch — соперник сжульничал")
+            endGame()                                        // честность нарушена -> стоп
+            return
+        }
+        android.util.Log.i("GAME_SEQ", "OPEN <- REVEAL peer die=$peerDie (проверен)")
+        // Оба честны. Сравниваем кости.
+        when {
+            myOpeningDie > peerDie -> finishOpening(myColor)
+            myOpeningDie < peerDie -> finishOpening(if (myColor == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE)
+            else -> {                                        // ничья -> переброс
+                android.util.Log.i("GAME_SEQ", "OPEN ничья $myOpeningDie=$peerDie -> переброс")
+                peerCommitHash = ""
+                startOpeningRoll()                           // свежие кость+соль
+            }
+        }
+    }
+
+    // Розыгрыш завершён: назначаю turn первого игрока, вхожу в ACTIVE.
+    private fun finishOpening(first: PlayerType) {
+        openingPhase = OpeningPhase.DONE
+        state = State.ACTIVE
+        android.util.Log.i("GAME_SEQ", "OPEN DONE -> первый ход: $first (мой цвет $myColor)")
+        callback.onOpeningDone(first)
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+    private fun String.hexToBytes(): ByteArray =
+        chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 
     // Выход из партии: GAME_END сопернику + сброс. No-op при IDLE (офлайн не трогает).
     fun endGame() {
@@ -202,6 +301,7 @@ interface GameCallback {
     fun onSendGameEvent(targetPeerId: String, gameJson: String)
     fun onInviteReceived(fromPeerId: String)
     fun onGameStarted(peerId: String, gameId: String)
+    fun onOpeningDone(first: PlayerType)
     fun onGameSystemMessage(text: String)
     fun onOpponentLeft()
     fun onRemoteMove(from: Int, to: Int, die: Int)
