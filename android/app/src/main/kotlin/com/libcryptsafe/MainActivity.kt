@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         .build()
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
         .certificatePinner(certPinner)
         .build()
 
@@ -123,6 +124,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         runOnUiThread {
             tvStatus.text = if (connected) getString(R.string.waiting_companion)
                             else getString(R.string.reconnecting)
+            GameActivity.CURRENT?.onConnectionChanged(connected)
         }
     }
     override fun onHandshakeDone(fingerprint: String) {

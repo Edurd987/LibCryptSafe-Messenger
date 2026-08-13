@@ -104,7 +104,7 @@ class GameManager(private val callback: GameCallback) {
         val s = outgoingSeq++
         val roll = JSONObject().apply {
             put("v", 1); put("type", "GAME_ROLL"); put("gameId", gameId)
-            put("seq", s); put("a", a); put("b", b)
+            put("owner", myColor.name); put("seq", s); put("a", a); put("b", b)
         }.toString()
         callback.onSendGameEvent(peerId, roll)
         android.util.Log.i("GAME_SEQ", "-> ROLL seq=$s $a,$b")
@@ -122,7 +122,7 @@ class GameManager(private val callback: GameCallback) {
         val s = outgoingSeq++
         val move = JSONObject().apply {
             put("v", 1); put("type", "GAME_MOVE"); put("gameId", gameId)
-            put("seq", s); put("die", die); put("from", from); put("to", to)
+            put("owner", myColor.name); put("seq", s); put("die", die); put("from", from); put("to", to)
         }.toString()
         callback.onSendGameEvent(peerId, move)
         android.util.Log.i("GAME_SEQ", "-> MOVE seq=$s die=$die $from->$to")
@@ -138,6 +138,12 @@ class GameManager(private val callback: GameCallback) {
 
     // СЕРДЦЕ ФИКСА: строгий порядок событий по seq (сквозной для ROLL+MOVE).
     private fun processIncomingEvent(json: JSONObject) {
+        // Owner-фильтр: событие валидно только из потока СОПЕРНИКА.
+        // Своё (эхо/ошибка) и любую третью сторону — игнорируем. Изоляция namespace.
+        val owner = json.optString("owner", "")
+        if (owner == myColor.name) { android.util.Log.i("GAME_SEQ", "<- OWN owner=$owner игнор"); return }
+        val peerColor = if (myColor == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
+        if (owner != peerColor.name) { android.util.Log.i("GAME_SEQ", "<- ALIEN owner=$owner игнор"); return }
         val seq = json.optInt("seq", -1)
         if (seq < 0) return
         when {
@@ -164,7 +170,7 @@ class GameManager(private val callback: GameCallback) {
             "GAME_MOVE" -> {
                 val from = json.optInt("from", -1); val to = json.optInt("to", -1)
                 val die = json.optInt("die", -1)
-                if (from >= 0 && to >= 0) { android.util.Log.i("GAME_SEQ", "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to"); callback.onRemoteMove(from, to, die) }
+                if (from >= 0 && (to >= 0 || to == -1)) { android.util.Log.i("GAME_SEQ", "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to"); callback.onRemoteMove(from, to, die) }
             }
         }
     }

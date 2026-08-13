@@ -34,6 +34,7 @@ class MessengerService : Service() {
     private val serviceClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
             .build()
     }
     private var myStableId: String = ""

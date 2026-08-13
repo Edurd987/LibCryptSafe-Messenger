@@ -43,6 +43,12 @@ class GameActivity : AppCompatActivity() {
     fun applyRemoteRoll(a: Int, b: Int) {
         findViewById<NardiBoardView>(R.id.nardi_board)?.applyRemoteRoll(a, b)
     }
+    fun onConnectionChanged(connected: Boolean) {
+        findViewById<NardiBoardView>(R.id.nardi_board)?.let {
+            it.isConnected = connected
+            it.invalidate()   // перерисовать (для баннера в 1.5b)
+        }
+    }
 
     private fun chooseMode() {
         val board = findViewById<NardiBoardView>(R.id.nardi_board)

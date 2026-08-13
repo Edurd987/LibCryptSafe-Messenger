@@ -35,6 +35,7 @@ class NardiBoardView @JvmOverloads constructor(
     // ===== СЕТЕВОЙ РЕЖИМ (Кирпич 6) =====
     var isOnlineMode: Boolean = false             // сетевая партия?
     var myColor: PlayerType = PlayerType.WHITE    // мой цвет в сетевой партии
+    var isConnected: Boolean = true               // связь с relay жива? (по умолчанию да)
     // Callback: локальный игрок сделал легальный ход -> отправить в трубу
     var onMoveMade: ((from: Int, to: Int, die: Int) -> Unit)? = null
     // Callback: локальный игрок бросил кости -> отправить сопернику (ROLL)
@@ -43,6 +44,17 @@ class NardiBoardView @JvmOverloads constructor(
     // Входное окно: применить ход соперника, пришедший по сети.
     // Меняет state и перерисовывает — БЕЗ повторной отправки в трубу.
     fun applyRemoteMove(from: Int, to: Int, die: Int) {
+        if (to == -1) {                      // ВЫБРОС из дома (bearOff сам вычислит кость)
+            if (canBearOff(state, from)) {
+                state = bearOff(state, from)
+                if (winner(state) != null) { gameOver = true; showWinBanner() }
+                else if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+                invalidate()
+            } else {
+                android.util.Log.e("NARDI_NET", "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0432\u044b\u0431\u0440\u043e\u0441 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from")
+            }
+            return
+        }
         if (isLegalMove(state, from, to)) {
             state = applyMove(state, from, to)
             state = consumeDie(state, die)   // тратим ПЕРЕДАННУЮ кость, не угадываем
@@ -228,6 +240,8 @@ class NardiBoardView @JvmOverloads constructor(
         // Кирпич 6.1: в сетевой партии ходить (и бросать) можно ТОЛЬКО в свой ход.
         // Блокируем ВЕСЬ ввод в чужой ход, включая бар-бросок — иначе локальное
         // изменение state рассинхронит доски. Бросок синхронизируется отдельно (ROLL).
+        // Кирпич 1.5: связь мертва -> блокируем ВЕСЬ ввод (не даём ходу уйти в мёртвую трубу).
+        if (isOnlineMode && !isConnected) return true
         if (isOnlineMode && state.turn != myColor) return true
         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
             // Тап по бару -> бросок заров (выбор пунктов не трогаем)
@@ -262,6 +276,8 @@ class NardiBoardView @JvmOverloads constructor(
                     val can = canBearOff(state, from)
                     if (can) {
                         state = bearOff(state, from)
+                        // Кирпич D: выброс -> в трубу (to=-1 маркер, die=-1 bearOff сам считает)
+                        if (isOnlineMode) onMoveMade?.invoke(from, -1, -1)
                         if (winner(state) != null) {
                             showWinBanner()
                         } else if (state.dice != null && !hasAnyLegalMove(state)) {
