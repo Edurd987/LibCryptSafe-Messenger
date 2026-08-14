@@ -186,8 +186,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
     }
 
-    override fun onOpeningDone(first: PlayerType) {
-        runOnUiThread { GameActivity.CURRENT?.startOnlineGameWithTurn(first) }
+    override fun onOpeningDone(first: PlayerType, myDie: Int, peerDie: Int) {
+        runOnUiThread { GameActivity.CURRENT?.startOnlineGameWithTurn(first, myDie, peerDie) }
     }
     override fun onRemoteMove(from: Int, to: Int, die: Int) {
         runOnUiThread { GameActivity.CURRENT?.applyRemoteMove(from, to, die) }

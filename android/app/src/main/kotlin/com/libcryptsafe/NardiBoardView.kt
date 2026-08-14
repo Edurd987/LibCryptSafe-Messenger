@@ -17,6 +17,8 @@ class NardiBoardView @JvmOverloads constructor(
 ) : View(context, attrs, defStyle) {
     private var gameOver = false
     private var winBanner: String? = null         // текст баннера победы (null = скрыт)
+    private var openingMyDie = 0                   // кости розыгрыша (0 = нет)
+    private var openingPeerDie = 0
     private val bannerBgPaint = Paint().apply { color = Color.parseColor("#CC0A1A12") }
     private val bannerTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#7CFFB0"); textAlign = Paint.Align.CENTER
@@ -68,8 +70,12 @@ class NardiBoardView @JvmOverloads constructor(
     }
 
     // Старт сетевой партии: обход розыгрыша ОДИН раз (WHITE ходит первым, MVP).
-    fun startOnlineGame(first: PlayerType) {
+    fun startOnlineGame(first: PlayerType, myDie: Int = 0, peerDie: Int = 0) {
         state = state.copy(isOpening = false, turn = first)   // turn из честного розыгрыша
+        if (myDie > 0 && peerDie > 0) {
+            openingMyDie = myDie; openingPeerDie = peerDie
+            winBanner = if (first == myColor) "Вы ходите первым" else "Первым ходит соперник"
+        }
         invalidate()
     }
 
@@ -255,6 +261,7 @@ class NardiBoardView @JvmOverloads constructor(
                         // Кирпич 6.4: бросок -> сопернику (только онлайн). dice=[a,b] или [a,a,a,a].
                         val d = state.dice
                         if (isOnlineMode && d != null && d.size >= 2) onRollMade?.invoke(d[0], d[1])
+                        if (isOnlineMode && !gameOver) { winBanner = null; openingMyDie = 0; openingPeerDie = 0 }   // убрать баннер розыгрыша
                         if (!hasAnyLegalMove(state)) state = burnTurn(state)
                     }
                 }
@@ -428,12 +435,29 @@ class NardiBoardView @JvmOverloads constructor(
             val w2 = width.toFloat(); val h2 = height.toFloat()
             canvas.drawRect(0f, 0f, w2, h2, bannerBgPaint)   // затемнение
             val parts = text.split("\n")
-            bannerTextPaint.textSize = w2 * 0.11f
-            bannerSubPaint.textSize = w2 * 0.08f
             val cy = h2 / 2f
+            // автоподбор: шрифт влезает в 90% ширины (длинный текст розыгрыша не вылезет)
+            fun fit(paint: Paint, s: String, base: Float): Float {
+                paint.textSize = base
+                val wText = paint.measureText(s)
+                val maxW = w2 * 0.9f
+                if (wText > maxW) paint.textSize = base * (maxW / wText)
+                return paint.textSize
+            }
+            fit(bannerTextPaint, parts[0], w2 * 0.11f)
             canvas.drawText(parts[0], w2 / 2f, cy - w2 * 0.04f, bannerTextPaint)
-            if (parts.size > 1)
+            if (parts.size > 1) {
+                fit(bannerSubPaint, parts[1], w2 * 0.08f)
                 canvas.drawText(parts[1], w2 / 2f, cy + w2 * 0.10f, bannerSubPaint)
+            }
+            // РОЗЫГРЫШ: два настоящих кубика под текстом (свой слева, соперника справа)
+            if (openingMyDie > 0 && openingPeerDie > 0) {
+                val dieSize = w2 * 0.13f
+                val gap = w2 * 0.09f
+                val dieCy = cy + w2 * 0.18f
+                drawDie(canvas, w2 / 2f - gap - dieSize / 2f, dieCy, dieSize, openingMyDie)
+                drawDie(canvas, w2 / 2f + gap + dieSize / 2f, dieCy, dieSize, openingPeerDie)
+            }
         }
     }
 }

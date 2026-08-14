@@ -153,8 +153,8 @@ class GameManager(private val callback: GameCallback) {
         android.util.Log.i("GAME_SEQ", "OPEN <- REVEAL peer die=$peerDie (проверен)")
         // Оба честны. Сравниваем кости.
         when {
-            myOpeningDie > peerDie -> finishOpening(myColor)
-            myOpeningDie < peerDie -> finishOpening(if (myColor == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE)
+            myOpeningDie > peerDie -> finishOpening(myColor, myOpeningDie, peerDie)
+            myOpeningDie < peerDie -> finishOpening(if (myColor == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE, myOpeningDie, peerDie)
             else -> {                                        // ничья -> переброс
                 android.util.Log.i("GAME_SEQ", "OPEN ничья $myOpeningDie=$peerDie -> переброс")
                 peerCommitHash = ""
@@ -164,11 +164,11 @@ class GameManager(private val callback: GameCallback) {
     }
 
     // Розыгрыш завершён: назначаю turn первого игрока, вхожу в ACTIVE.
-    private fun finishOpening(first: PlayerType) {
+    private fun finishOpening(first: PlayerType, myDie: Int, peerDie: Int) {
         openingPhase = OpeningPhase.DONE
         state = State.ACTIVE
         android.util.Log.i("GAME_SEQ", "OPEN DONE -> первый ход: $first (мой цвет $myColor)")
-        callback.onOpeningDone(first)
+        callback.onOpeningDone(first, myDie, peerDie)
     }
 
     private fun sha256(bytes: ByteArray): String =
@@ -301,7 +301,7 @@ interface GameCallback {
     fun onSendGameEvent(targetPeerId: String, gameJson: String)
     fun onInviteReceived(fromPeerId: String)
     fun onGameStarted(peerId: String, gameId: String)
-    fun onOpeningDone(first: PlayerType)
+    fun onOpeningDone(first: PlayerType, myDie: Int, peerDie: Int)
     fun onGameSystemMessage(text: String)
     fun onOpponentLeft()
     fun onRemoteMove(from: Int, to: Int, die: Int)

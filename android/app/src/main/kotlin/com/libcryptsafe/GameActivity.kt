@@ -39,8 +39,8 @@ class GameActivity : AppCompatActivity() {
     }
 
     // Розыгрыш Маяк 4 завершён: стартуем доску с определённым первым ходом.
-    fun startOnlineGameWithTurn(first: PlayerType) {
-        findViewById<NardiBoardView>(R.id.nardi_board)?.startOnlineGame(first)
+    fun startOnlineGameWithTurn(first: PlayerType, myDie: Int, peerDie: Int) {
+        findViewById<NardiBoardView>(R.id.nardi_board)?.startOnlineGame(first, myDie, peerDie)
     }
 
     // Ход соперника из трубы -> на доску, которую видит игрок.
