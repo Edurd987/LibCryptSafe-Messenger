@@ -9,13 +9,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
-    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class],
-    version = 5, exportSchema = false)
+    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class, ChannelEntity::class, PostEntity::class],
+    version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun contactDao(): ContactDao
     abstract fun prekeyDao(): PrekeyDao
     abstract fun sessionDao(): SessionDao
+    abstract fun channelDao(): ChannelDao
+    abstract fun postDao(): PostDao
 
     companion object {
         @Volatile
@@ -51,6 +53,30 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS channels (" +
+                    "channelId TEXT PRIMARY KEY NOT NULL, " +
+                    "title TEXT NOT NULL, " +
+                    "isOwned INTEGER NOT NULL, " +
+                    "privKey BLOB, " +
+                    "createdAt INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS posts (" +
+                    "channelId TEXT NOT NULL, " +
+                    "seq INTEGER NOT NULL, " +
+                    "timestamp INTEGER NOT NULL, " +
+                    "content TEXT NOT NULL, " +
+                    "signature BLOB NOT NULL, " +
+                    "PRIMARY KEY(channelId, seq))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_posts_channelId ON posts(channelId)"
+                )
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -73,7 +99,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 ).openHelperFactory(factory)
-                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5)  // путь B: данные сохраняются
+                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)  // путь B: данные сохраняются
                       .build()
                 INSTANCE = instance
                 instance
