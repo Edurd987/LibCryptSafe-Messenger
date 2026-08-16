@@ -227,6 +227,37 @@ public:
             md_ctx.get(), sig_der.data(), sig_der.size());
         return rc == 1;
     }
+    // === Подпись поста канала (зеркало verify_signature) ===
+    // priv_der = приватный ключ канала (DER, PKCS#8 из SQLCipher).
+    // data = [8B seq BE][8B ts BE][content UTF-8] (собирает вызывающий).
+    // Возврат: подпись в DER; пустой вектор при любой ошибке.
+    static std::vector<uint8_t> channel_sign(
+            const std::vector<uint8_t>& priv_der,
+            const std::vector<uint8_t>& data) {
+
+        const uint8_t* ptr = priv_der.data();
+        auto priv = UniqPkey(
+            d2i_AutoPrivateKey(nullptr, &ptr, static_cast<long>(priv_der.size())));
+        if (!priv) return {};   // не распарсили приватный ключ
+
+        auto md_ctx = UniqMdCtx(EVP_MD_CTX_new());
+        if (!md_ctx) return {};
+        if (EVP_DigestSignInit(
+                md_ctx.get(), nullptr, EVP_sha256(), nullptr, priv.get()) != 1)
+            return {};
+        if (EVP_DigestSignUpdate(md_ctx.get(), data.data(), data.size()) != 1)
+            return {};
+
+        // 1-й вызов с nullptr = узнать длину подписи; 2-й = записать.
+        size_t sig_len = 0;
+        if (EVP_DigestSignFinal(md_ctx.get(), nullptr, &sig_len) != 1)
+            return {};
+        std::vector<uint8_t> sig(sig_len);
+        if (EVP_DigestSignFinal(md_ctx.get(), sig.data(), &sig_len) != 1)
+            return {};
+        sig.resize(sig_len);   // фактическая длина DER-подписи
+        return sig;
+    }
 
     // ═══ X3DH инициатор (Алиса): 4 DH + деривация ═══
     // Генерит эфемерный EK внутри. Считает DH1-DH4 по формулам из

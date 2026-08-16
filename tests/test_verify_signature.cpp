@@ -75,11 +75,38 @@ int main() {
     bool ok5 = !KeyExchange::verify_signature(junk, data, sig);
     printf("ТЕСТ 5 (мусор вместо ключа): %s\n", ok5 ? ">>> ОТВЕРГНУТА, без краха (верно)" : ">>> ПРОВАЛ!");
 
+    // === ТЕСТ 6+7: channel_sign (наша подпись поста канала) ===
+    // Генерим пару КАНАЛА (priv в SQLCipher, pub = channelId).
+    Crypto::KeyExchange ch;
+    auto ch_priv = ch.export_private_key();
+    auto ch_pub  = ch.export_public_key();
+    // Тестовый пост: [8B seq][8B ts][content] — детерминированная сборка.
+    std::vector<uint8_t> post;
+    for (int i = 0; i < 8; ++i) post.push_back(i == 7 ? 0x2A : 0x00);  // seq=42 BE
+    for (int i = 0; i < 8; ++i) post.push_back(0x55);                  // ts
+    const char* body = "Hello channel";
+    for (const char* c = body; *c; ++c) post.push_back(static_cast<uint8_t>(*c));
+
+    auto ch_sig = Crypto::KeyExchange::channel_sign(ch_priv, post);
+    printf("\nchannel_sign: %zu байт (ECDSA P-256 DER, обычно 70-72)\n", ch_sig.size());
+
+    // ТЕСТ 6: наша подпись проходит verify (зеркало работает)
+    bool ok6 = !ch_sig.empty() &&
+               Crypto::KeyExchange::verify_signature(ch_pub, post, ch_sig);
+    printf("ТЕСТ 6 (channel_sign -> verify): %s\n",
+           ok6 ? ">>> ПРИНЯТА (зеркало корректно)" : ">>> ПРОВАЛ!");
+
+    // ТЕСТ 7: подделанный пост -> verify отвергает (целостность)
+    auto bad_post = post; bad_post[16] ^= 0xFF;   // портим первый байт content
+    bool ok7 = !Crypto::KeyExchange::verify_signature(ch_pub, bad_post, ch_sig);
+    printf("ТЕСТ 7 (подделка поста): %s\n",
+           ok7 ? ">>> ОТВЕРГНУТА (целостность верна)" : ">>> ПРОВАЛ!");
+
     EVP_PKEY_free(key); EVP_PKEY_free(eve);
 
-    bool all = ok1 && ok2 && ok3 && ok4 && ok5;
+    bool all = ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7;
     printf("\n====================================\n");
-    printf("%s\n", all ? "ВСЕ 5 ПРОЙДЕНЫ - verify_signature корректен"
+    printf("%s\n", all ? "ВСЕ 7 ПРОЙДЕНЫ - verify + channel_sign корректны"
                        : "ЕСТЬ ПРОВАЛЫ - РАЗБИРАТЬ");
     return all ? 0 : 1;
 }

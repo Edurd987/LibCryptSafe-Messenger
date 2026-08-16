@@ -81,6 +81,70 @@ Java_com_libcryptsafe_CryptoManager_verifySignature(
     }
 }
 
+// ═══ КАНАЛЫ 0a: генерация пары ключей канала (P-256) ═══
+// Возврат: [0]=pub (channelId, X.509 DER), [1]=priv (PKCS#8 DER для SQLCipher).
+JNIEXPORT jobjectArray JNICALL
+Java_com_libcryptsafe_CryptoManager_channelGenerateKeypair(
+        JNIEnv* env, jobject) {
+    try {
+        Crypto::KeyExchange ch;                       // новая P-256 пара канала
+        std::vector<uint8_t> pub  = ch.export_public_key();
+        std::vector<uint8_t> priv = ch.export_private_key();
+
+        jclass byteArrCls = env->FindClass("[B");
+        if (!byteArrCls) return nullptr;
+        jobjectArray result = env->NewObjectArray(2, byteArrCls, nullptr);
+        if (!result) return nullptr;
+
+        jbyteArray jpub = env->NewByteArray(static_cast<jsize>(pub.size()));
+        env->SetByteArrayRegion(jpub, 0, static_cast<jsize>(pub.size()),
+            reinterpret_cast<const jbyte*>(pub.data()));
+        env->SetObjectArrayElement(result, 0, jpub);
+        env->DeleteLocalRef(jpub);
+
+        jbyteArray jpriv = env->NewByteArray(static_cast<jsize>(priv.size()));
+        env->SetByteArrayRegion(jpriv, 0, static_cast<jsize>(priv.size()),
+            reinterpret_cast<const jbyte*>(priv.data()));
+        env->SetObjectArrayElement(result, 1, jpriv);
+        env->DeleteLocalRef(jpriv);
+
+        OPENSSL_cleanse(priv.data(), priv.size());    // гигиена
+        return result;
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
+// ═══ КАНАЛЫ 0b: подпись поста канала (channel_sign, доказан на десктопе) ═══
+// priv_der = приватный ключ канала (из SQLCipher)
+// data = [8B seq BE][8B ts BE][content UTF-8] (собирает Kotlin)
+// Возврат: DER-подпись, или null при ошибке.
+JNIEXPORT jbyteArray JNICALL
+Java_com_libcryptsafe_CryptoManager_channelSign(
+        JNIEnv* env, jobject,
+        jbyteArray priv_der, jbyteArray data) {
+    try {
+        auto toVec = [&](jbyteArray arr) {
+            jsize len = env->GetArrayLength(arr);
+            std::vector<uint8_t> v(len);
+            env->GetByteArrayRegion(arr, 0, len,
+                reinterpret_cast<jbyte*>(v.data()));
+            return v;
+        };
+        std::vector<uint8_t> priv = toVec(priv_der);
+        std::vector<uint8_t> sig = Crypto::KeyExchange::channel_sign(priv, toVec(data));
+        OPENSSL_cleanse(priv.data(), priv.size());    // гигиена приватного ключа
+        if (sig.empty()) return nullptr;              // ошибка подписи
+
+        jbyteArray jsig = env->NewByteArray(static_cast<jsize>(sig.size()));
+        env->SetByteArrayRegion(jsig, 0, static_cast<jsize>(sig.size()),
+            reinterpret_cast<const jbyte*>(sig.data()));
+        return jsig;
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
 // ═══ X3DH инициатор (Алиса): 4 DH + деривация. STATELESS ═══
 // Вход: наш IK_DH priv (DER), публичные Боба: IK_DH, SPK, OPK (или null).
 // Выход: [0]=Kenc(32), [1]=Kauth(32), [2]=EK_pub(91) для первого сообщения.

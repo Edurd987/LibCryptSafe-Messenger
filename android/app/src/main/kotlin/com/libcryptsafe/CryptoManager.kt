@@ -39,6 +39,10 @@ object CryptoManager {
     // Алиса проверяет связку Боба перед построением сессии (защита от MITM).
     external fun verifySignature(
         pubDer: ByteArray, data: ByteArray, sigDer: ByteArray): Boolean
+
+    // Каналы: генерация пары (pub=channelId, priv в SQLCipher) + подпись поста
+    external fun channelGenerateKeypair(): Array<ByteArray>?
+    external fun channelSign(privDer: ByteArray, data: ByteArray): ByteArray?
     external fun computeSharedKey(peerPubKey: ByteArray): Int
     external fun encrypt(plaintext: ByteArray): ByteArray?
 
