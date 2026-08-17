@@ -81,6 +81,10 @@
     <string name="channel_create_ok">Create</string>
     <string name="channel_cancel">Cancel</string>
     <string name="channel_owned">(mine)</string>
+    <string name="channel_back">&#8592; Back</string>
+    <string name="post_write_hint">Write a news post</string>
+    <string name="post_publish">Publish</string>
+    <string name="channel_empty">No posts yet</string>
     <string name="contacts_empty">No contacts yet</string>
     <string name="contacts_add">Add contact</string>
     <string name="contact_name_hint">Name</string>

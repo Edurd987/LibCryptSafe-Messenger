@@ -74,6 +74,17 @@
     <string name="my_id_copy">Копировать</string>
     <string name="my_id_copied">ID скопирован</string>
     <string name="tab_contacts">Контакты</string>
+    <string name="tab_channels">Каналы</string>
+    <string name="channel_create">+ Создать канал</string>
+    <string name="channel_new_title">Новый канал</string>
+    <string name="channel_name_hint">Название канала</string>
+    <string name="channel_create_ok">Создать</string>
+    <string name="channel_cancel">Отмена</string>
+    <string name="channel_owned">(мой)</string>
+    <string name="channel_back">← Назад</string>
+    <string name="post_write_hint">Написать новость</string>
+    <string name="post_publish">Опубликовать</string>
+    <string name="channel_empty">Пока нет новостей</string>
     <string name="contacts_empty">Контактов пока нет</string>
     <string name="contacts_add">Добавить контакт</string>
     <string name="contact_name_hint">Имя</string>

@@ -462,9 +462,67 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     textSize = 16f
                     setPadding(24, 24, 24, 24)
                     setTextColor(0xFFFFFFFF.toInt())
-                    // тап -> посты канала (кирпич 4c)
+                    setOnClickListener { openChannel(ch.channelId, ch.title, ch.isOwned) }
                 }
                 list.addView(tv)
+            }
+        }
+    }
+
+    // Открыть канал: показать посты, поле ввода только владельцу.
+    private var openChannelId: String? = null
+    private fun openChannel(channelId: String, title: String, isOwned: Boolean) {
+        openChannelId = channelId
+        findViewById<android.widget.ScrollView>(R.id.container_channels).visibility = android.view.View.GONE
+        val posts = findViewById<LinearLayout>(R.id.container_posts)
+        posts.visibility = android.view.View.VISIBLE
+        findViewById<android.widget.TextView>(R.id.posts_channel_title).text =
+            title + (if (isOwned) " " + getString(R.string.channel_owned) else "")
+        // поле написания новости — ТОЛЬКО владельцу
+        findViewById<LinearLayout>(R.id.input_post_area).visibility =
+            if (isOwned) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<android.widget.TextView>(R.id.btn_posts_back).setOnClickListener {
+            posts.visibility = android.view.View.GONE
+            findViewById<android.widget.ScrollView>(R.id.container_channels).visibility = android.view.View.VISIBLE
+            openChannelId = null
+        }
+        findViewById<android.widget.Button>(R.id.btn_publish_post).setOnClickListener {
+            val input = findViewById<android.widget.EditText>(R.id.input_post)
+            val text = input.text.toString().trim()
+            if (text.isNotEmpty()) {
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    val post = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.publishPost(channelId, text) }
+                    if (post != null) { input.setText(""); refreshPosts(channelId) }
+                }
+            }
+        }
+        refreshPosts(channelId)
+    }
+
+    private fun refreshPosts(channelId: String) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            val posts = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.getPosts(channelId) }
+            val list = findViewById<LinearLayout>(R.id.list_posts)
+            list.removeAllViews()
+            if (posts.isEmpty()) {
+                val empty = android.widget.TextView(this@MainActivity).apply {
+                    text = getString(R.string.channel_empty)
+                    textSize = 14f; setPadding(24, 24, 24, 24); setTextColor(0xFF8A93A0.toInt())
+                }
+                list.addView(empty)
+            } else {
+                val fmt = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault())
+                for (post in posts) {   // seq ASC: старые сверху, новые снизу (как чат)
+                    val tv = android.widget.TextView(this@MainActivity).apply {
+                        text = post.content + "\n" + fmt.format(java.util.Date(post.timestamp))
+                        textSize = 15f; setPadding(24, 20, 24, 20); setTextColor(0xFFFFFFFF.toInt())
+                    }
+                    list.addView(tv)
+                }
+                // прокрутить вниз к свежему
+                findViewById<android.widget.ScrollView>(R.id.scroll_posts).post {
+                    findViewById<android.widget.ScrollView>(R.id.scroll_posts).fullScroll(android.view.View.FOCUS_DOWN)
+                }
             }
         }
     }
