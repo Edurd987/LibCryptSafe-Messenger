@@ -218,12 +218,44 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         startMessengerService()
         setContentView(R.layout.activity_main)
 
+
         containerMessages = findViewById(R.id.container_messages)
         scrollMessages    = findViewById(R.id.scroll_messages)
         etMessage         = findViewById(R.id.et_message)
         tvStatus          = findViewById(R.id.tv_status)
 
         db = AppDatabase.getInstance(this)
+
+        // ═══ ВРЕМЕННЫЙ тест Room-слоя каналов (СНЯТЬ после проверки) ═══
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val repo = ChannelRepository(this@MainActivity)
+                // 1) создать канал
+                val ch = repo.createChannel("Тестовый канал")
+                if (ch == null) { android.util.Log.e("CHAN_ROOM", "[FAIL] createChannel null"); return@launch }
+                // 2) написать два поста (проверка seq)
+                val p1 = repo.publishPost(ch.channelId, "Первый пост")
+                val p2 = repo.publishPost(ch.channelId, "Второй пост")
+                // 3) прочитать обратно
+                val posts = repo.getPosts(ch.channelId)
+                // 4) проверить защиту: битый пост -> SecurityException
+                var secOk = false
+                try {
+                    val bad = com.libcryptsafe.db.PostEntity(ch.channelId, 99L, System.currentTimeMillis(), "Подделка", ByteArray(70))
+                    repo.saveIncomingPost(bad)
+                } catch (e: SecurityException) { secOk = true }
+                // 5) проверить, что старые данные целы (миграция)
+                val contacts = db.contactDao().getAllOnce().size
+                android.util.Log.i("CHAN_ROOM",
+                    "[" + (if (posts.size == 2 && p1?.seq == 1L && p2?.seq == 2L && secOk) "SUCCESS" else "FAIL") + "]" +
+                    " channelId=" + ch.channelId.take(12) + "... posts=" + posts.size +
+                    " seq1=" + p1?.seq + " seq2=" + p2?.seq + " secException=" + secOk +
+                    " oldContacts=" + contacts)
+                repo.deleteChannel(ch.channelId)   // чистим тестовый канал
+            } catch (e: Exception) {
+                android.util.Log.e("CHAN_ROOM", "[FAIL] исключение: " + e.message)
+            }
+        }
 
         checkAppLock()
     }
@@ -344,6 +376,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         setupWipeData()
         setupMore()
         setupGames()
+        setupChannels()
         setupContacts()
         checkEnvironment()
     }
@@ -360,16 +393,19 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         val gamesView = findViewById<android.widget.ScrollView>(R.id.container_games)
         val tabContacts = findViewById<TextView>(R.id.tab_contacts)
         val contactsView = findViewById<android.widget.ScrollView>(R.id.container_contacts)
+        val tabChannels = findViewById<TextView>(R.id.tab_channels)
+        val channelsView = findViewById<android.widget.ScrollView>(R.id.container_channels)
 
 // Единый переключатель вкладок: показывает один контейнер, гасит остальные.
         // active — id активного таба. inputBar виден только на чате.
-        val tabs = listOf(tabChat, tabNet, tabMore, tabGames, tabContacts)
+        val tabs = listOf(tabChat, tabNet, tabMore, tabGames, tabContacts, tabChannels)
         fun selectTab(active: TextView) {
             chatView.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
             netView.visibility   = if (active == tabNet)   android.view.View.VISIBLE else android.view.View.GONE
             moreView.visibility  = if (active == tabMore)  android.view.View.VISIBLE else android.view.View.GONE
             gamesView.visibility = if (active == tabGames) android.view.View.VISIBLE else android.view.View.GONE
             contactsView.visibility = if (active == tabContacts) android.view.View.VISIBLE else android.view.View.GONE
+            channelsView.visibility = if (active == tabChannels) android.view.View.VISIBLE else android.view.View.GONE
             inputBar.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
             for (t in tabs) {
                 val on = t == active
@@ -383,9 +419,56 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         tabMore.setOnClickListener  { selectTab(tabMore) }
         tabGames.setOnClickListener { selectTab(tabGames) }
         tabContacts.setOnClickListener { selectTab(tabContacts); refreshContacts() }
+        tabChannels.setOnClickListener { selectTab(tabChannels); refreshChannels() }
     }
 
     // Карточки игр (пока заглушки — игры в разработке)
+    // Каналы: создание через диалог (только имя), генерация пары, запись в БД
+    private val channelRepo by lazy { ChannelRepository(this) }
+    private fun setupChannels() {
+        findViewById<android.widget.Button>(R.id.btn_create_channel).setOnClickListener {
+            val input = android.widget.EditText(this).apply {
+                hint = getString(R.string.channel_name_hint); isSingleLine = true
+            }
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0); addView(input)
+            }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.channel_new_title))
+                .setView(box)
+                .setPositiveButton(getString(R.string.channel_create_ok)) { _, _ ->
+                    val title = input.text.toString().trim()
+                    if (title.isNotEmpty()) {
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                            val ch = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.createChannel(title) }
+                            if (ch != null) refreshChannels()
+                        }
+                    }
+                }
+                .setNegativeButton(getString(R.string.channel_cancel), null)
+                .show()
+        }
+    }
+
+    private fun refreshChannels() {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            val channels = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.getChannels() }
+            val list = findViewById<LinearLayout>(R.id.list_channels)
+            list.removeAllViews()
+            for (ch in channels) {
+                val tv = android.widget.TextView(this@MainActivity).apply {
+                    text = ch.title + (if (ch.isOwned) " " + getString(R.string.channel_owned) else "")
+                    textSize = 16f
+                    setPadding(24, 24, 24, 24)
+                    setTextColor(0xFFFFFFFF.toInt())
+                    // тап -> посты канала (кирпич 4c)
+                }
+                list.addView(tv)
+            }
+        }
+    }
+
     // Контакты: добавление через диалог (имя + ID), валидация, запись в БД
     private fun setupContacts() {
         findViewById<Button>(R.id.btn_add_contact).setOnClickListener {
