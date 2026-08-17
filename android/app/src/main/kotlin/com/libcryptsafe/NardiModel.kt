@@ -135,24 +135,25 @@ private fun creates6Block(board: List<PointState>, player: PlayerType): Boolean 
         if (pt.player == player && pt.count >= 1) {
             chain++
             if (chain >= 6) {
-                // Физические пункты стены: route[pos-5..pos].
-                val wallPoints = (pos - 5..pos).map { route[it] }.toSet()
+                // Физические пункты стены: ВСЯ цепочка route[pos-(chain-1)..pos],
+                // не жёстко последние 6 — иначе 7+ стена усекается и запор не ловится.
+                val wallPoints = (pos - (chain - 1)..pos).map { route[it] }.toSet()
                 // Позиция стены в МАРШРУТЕ СОПЕРНИКА (единая система координат).
                 val oppRoute = routeFor(opp)
                 val wallPosInOpp = wallPoints.map { oppRoute.indexOf(it) }.filter { it >= 0 }
                 val wallStartInOpp = wallPosInOpp.minOrNull() ?: -1
-                // Есть ли у соперника шашка ВПЕРЕДИ стены по ЕГО маршруту (может обойти)?
-                var oppHasWayOut = false
+                // Стена запирает соперника ТОЛЬКО если у него есть шашка ПОЗАДИ стены
+                // (oppPos < начала стены по ЕГО маршруту = ещё не дошла, путь преграждён).
+                // Если все шашки соперника ВПЕРЕДИ стены (прошли) — запирать некого, стена легальна.
+                var oppTrappedBehind = false
                 for (i in 0..23) {
                     val op = board[i]
                     if (op.player == opp && op.count > 0 && i !in wallPoints) {
                         val oppPos = oppRoute.indexOf(i)
-                        // фишка дальше начала стены по маршруту соперника = уже прошла её
-                        if (oppPos > wallStartInOpp) { oppHasWayOut = true; break }
+                        if (oppPos in 0 until wallStartInOpp) { oppTrappedBehind = true; break }
                     }
                 }
-                // Заперт (нет пути в обход) -> запрещаем стену.
-                if (!oppHasWayOut) return true
+                if (oppTrappedBehind) return true
             }
         } else {
             chain = 0
