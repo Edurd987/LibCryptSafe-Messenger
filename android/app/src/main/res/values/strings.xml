@@ -81,6 +81,13 @@
     <string name="channel_create_ok">Create</string>
     <string name="channel_cancel">Cancel</string>
     <string name="channel_owned">(mine)</string>
+    <string name="channel_subscribe">+ Subscribe</string>
+    <string name="channel_sub_title">Subscribe to a channel</string>
+    <string name="channel_id_hint">Channel ID</string>
+    <string name="channel_scan_qr">Scan QR</string>
+    <string name="channel_sub_ok">Subscribe</string>
+    <string name="channel_copy_id">Copy channel ID</string>
+    <string name="channel_id_copied">Channel ID copied</string>
     <string name="channel_back">&#8592; Back</string>
     <string name="post_write_hint">Write a news post</string>
     <string name="post_publish">Publish</string>

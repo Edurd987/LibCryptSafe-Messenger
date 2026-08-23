@@ -161,6 +161,23 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             saveLastPeerId(peerId)
             handleIncoming(content)
         }
+    }
+
+    override fun onChannelPosts(channelId: String, posts: List<IncomingPost>) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                for (p in posts) {
+                    try {
+                        channelRepo.saveIncomingPost(
+                            com.libcryptsafe.db.PostEntity(channelId, p.seq, p.ts, p.content, p.sig))
+                    } catch (e: SecurityException) {
+                        // подделка/мусор с relay -> пропустить, продолжить остальные
+                    } catch (e: Exception) { }
+                }
+            }
+            // если открыт этот канал — обновить ленту
+            if (openChannelId == channelId) refreshPosts(channelId)
+        }
     }
 
     // === Нарды Кирпич 4а: реализация GameCallback (мост GameManager <-> UI/сеть) ===
@@ -377,6 +394,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         setupMore()
         setupGames()
         setupChannels()
+        setupSubscribe()
         setupContacts()
         checkEnvironment()
     }
@@ -451,6 +469,81 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
     }
 
+    // Подписаться на чужой канал: ввод channelId (Base64) + локальное имя.
+    // Общий путь подписки: и ручной ввод, и QR-сканер используют один код (без дублирования).
+    private fun doSubscribe(cid: String) {
+        if (cid.isEmpty()) return
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.subscribe(cid, cid.take(12)) }
+            refreshChannels()
+            fetchChannelFromRelay(cid)
+        }
+    }
+
+    // Сканер QR (zxing-android-embedded, ActivityResultContract).
+    private val qrScanLauncher = registerForActivityResult(com.journeyapps.barcodescanner.ScanContract()) { result ->
+        val cid = result.contents
+        if (!cid.isNullOrEmpty()) doSubscribe(cid)
+    }
+
+    // Разрешение камеры (runtime, современный ActivityResultContract).
+    private val cameraPermLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            qrScanLauncher.launch(com.journeyapps.barcodescanner.ScanOptions().apply {
+                setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
+                setPrompt(getString(R.string.channel_id_hint))
+                setBeepEnabled(false)
+            })
+        } else {
+            android.widget.Toast.makeText(this, getString(R.string.channel_id_hint), android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun startQrScan() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            qrScanLauncher.launch(com.journeyapps.barcodescanner.ScanOptions().apply {
+                setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
+                setPrompt(getString(R.string.channel_id_hint))
+                setBeepEnabled(false)
+            })
+        } else {
+            cameraPermLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun setupSubscribe() {
+        val btn = findViewById<android.widget.Button>(R.id.btn_subscribe_channel)
+        btn.setOnClickListener {
+            val input = android.widget.EditText(this).apply {
+                hint = getString(R.string.channel_id_hint); isSingleLine = true
+            }
+            val scanBtn = android.widget.Button(this).apply {
+                text = getString(R.string.channel_scan_qr)
+            }
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0)
+                addView(scanBtn); addView(input)
+            }
+            val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.channel_sub_title))
+                .setView(box)
+                .setPositiveButton(getString(R.string.channel_sub_ok)) { _, _ ->
+                    doSubscribe(input.text.toString().trim())
+                }
+                .setNegativeButton(getString(R.string.channel_cancel), null)
+                .create()
+            scanBtn.setOnClickListener {
+                dialog.dismiss()
+                startQrScan()
+            }
+            dialog.show()
+        }
+    }
+
     private fun refreshChannels() {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             val channels = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.getChannels() }
@@ -476,8 +569,11 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         findViewById<android.widget.ScrollView>(R.id.container_channels).visibility = android.view.View.GONE
         val posts = findViewById<LinearLayout>(R.id.container_posts)
         posts.visibility = android.view.View.VISIBLE
-        findViewById<android.widget.TextView>(R.id.posts_channel_title).text =
-            title + (if (isOwned) " " + getString(R.string.channel_owned) else "")
+        findViewById<android.widget.TextView>(R.id.posts_channel_title).apply {
+            text = title + (if (isOwned) " " + getString(R.string.channel_owned) else "")
+            // тап на заголовок -> показать QR (+ кнопка скопировать ID как fallback)
+            setOnClickListener { showChannelQr(channelId) }
+        }
         // поле написания новости — ТОЛЬКО владельцу
         findViewById<LinearLayout>(R.id.input_post_area).visibility =
             if (isOwned) android.view.View.VISIBLE else android.view.View.GONE
@@ -492,11 +588,87 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             if (text.isNotEmpty()) {
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                     val post = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.publishPost(channelId, text) }
-                    if (post != null) { input.setText(""); refreshPosts(channelId) }
+                    if (post != null) {
+                        input.setText(""); refreshPosts(channelId)
+                        sendPostToRelay(post)   // публикуем на слепой relay
+                    }
                 }
             }
         }
         refreshPosts(channelId)
+        fetchChannelFromRelay(channelId)   // тянем свежие посты с relay
+    }
+
+    // Отправить пост на слепой relay: {channel_post, channelId, seq, payload:{ts,content,sig}}
+    private fun sendPostToRelay(post: com.libcryptsafe.db.PostEntity) {
+        android.util.Log.i("CHAN_NET", "sendPostToRelay ВЫЗВАН seq=" + post.seq + " networkManager=" + (if (networkManager != null) "есть" else "NULL"))
+        try {
+            val payload = org.json.JSONObject().apply {
+                put("ts", post.timestamp)
+                put("content", post.content)
+                put("sig", android.util.Base64.encodeToString(post.signature, android.util.Base64.NO_WRAP))
+            }
+            val envelope = org.json.JSONObject().apply {
+                put("type", "channel_post")
+                put("channelId", post.channelId)
+                put("seq", post.seq)
+                put("payload", payload.toString())
+            }.toString()
+            android.util.Log.i("CHAN_NET", "отправляю channel_post: " + envelope.take(100))
+            networkManager?.sendJson(envelope)
+            android.util.Log.i("CHAN_NET", "sendJson вызван (не значит доставлен)")
+        } catch (e: Exception) { android.util.Log.e("CHAN_NET", "sendPost ОШИБКА: " + e.message) }
+    }
+
+    // Запросить у relay посты канала с seq>lastSeq (инкрементальная докачка).
+    private fun fetchChannelFromRelay(channelId: String) {
+        android.util.Log.i("CHAN_NET", "fetchChannelFromRelay ВЫЗВАН networkManager=" + (if (networkManager != null) "есть" else "NULL"))
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            val sinceSeq = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.libcryptsafe.db.AppDatabase.getInstance(this@MainActivity).postDao().lastSeq(channelId) ?: 0L
+            }
+            val req = org.json.JSONObject().apply {
+                put("type", "channel_fetch")
+                put("channelId", channelId)
+                put("sinceSeq", sinceSeq)
+            }.toString()
+            android.util.Log.i("CHAN_NET", "fetch channelId ПОЛНЫЙ len=" + channelId.length + " val=" + channelId)
+            android.util.Log.i("CHAN_NET", "отправляю channel_fetch sinceSeq=" + sinceSeq)
+            networkManager?.sendJson(req)
+        }
+    }
+
+    // Показать QR-код канала для передачи (генерация полностью офлайн, данные никуда не уходят).
+    private fun showChannelQr(channelId: String) {
+        val imageView = android.widget.ImageView(this).apply {
+            val size = (260 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(size, size)
+        }
+        try {
+            val writer = com.google.zxing.MultiFormatWriter()
+            val matrix = writer.encode(channelId, com.google.zxing.BarcodeFormat.QR_CODE, 512, 512)
+            val bitmap = com.journeyapps.barcodescanner.BarcodeEncoder().createBitmap(matrix)
+            imageView.setImageBitmap(bitmap)
+        } catch (e: Exception) {
+            android.util.Log.e("CHAN_QR", "ошибка генерации QR: " + e.message)
+        }
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+            setPadding(pad, pad, pad, pad)
+            addView(imageView)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.channel_id_hint))
+            .setView(box)
+            .setPositiveButton(getString(R.string.channel_copy_id)) { _, _ ->
+                val clip = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clip.setPrimaryClip(android.content.ClipData.newPlainText("channelId", channelId))
+                android.widget.Toast.makeText(this@MainActivity, getString(R.string.channel_id_copied), android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(getString(R.string.channel_cancel), null)
+            .show()
     }
 
     private fun refreshPosts(channelId: String) {

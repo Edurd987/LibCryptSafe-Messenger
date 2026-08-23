@@ -119,7 +119,27 @@ class NetworkManager(
                         }
                         return
                     }
-                    // адресное сообщение — распаковка конверта {from,to,payload}
+                    // Каналы: ответ relay со списком постов -> проброс в MainActivity (там проверка подписи)
+                    if (json.getString("type") == "channel_posts") {
+                        val channelId = json.getString("channelId")
+                        val postsArr = json.getJSONArray("posts")
+                        val list = mutableListOf<IncomingPost>()
+                        for (i in 0 until postsArr.length()) {
+                            try {
+                                val p = postsArr.getJSONObject(i)
+                                val payload = JSONObject(p.getString("payload"))
+                                list.add(IncomingPost(
+                                    p.getLong("seq"),
+                                    payload.getLong("ts"),
+                                    payload.getString("content"),
+                                    Base64.decode(payload.getString("sig"), Base64.NO_WRAP)
+                                ))
+                            } catch (e: Exception) { /* битый пост в массиве -> пропустить */ }
+                        }
+                        handler.onChannelPosts(channelId, list)
+                        return
+                    }
+                                        // адресное сообщение — распаковка конверта {from,to,payload}
                     if (json.getString("type") == "msg") {
                         val payloadB64 = json.optString("payload", "")
                         if (payloadB64.isEmpty()) return

@@ -81,6 +81,13 @@
     <string name="channel_create_ok">Создать</string>
     <string name="channel_cancel">Отмена</string>
     <string name="channel_owned">(мой)</string>
+    <string name="channel_subscribe">+ Подписаться</string>
+    <string name="channel_sub_title">Подписка на канал</string>
+    <string name="channel_id_hint">ID канала</string>
+    <string name="channel_scan_qr">Сканировать QR</string>
+    <string name="channel_sub_ok">Подписаться</string>
+    <string name="channel_copy_id">Скопировать ID канала</string>
+    <string name="channel_id_copied">ID канала скопирован</string>
     <string name="channel_back">← Назад</string>
     <string name="post_write_hint">Написать новость</string>
     <string name="post_publish">Опубликовать</string>

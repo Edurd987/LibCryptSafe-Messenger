@@ -575,6 +575,12 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/channel_create"
+            android:layout_marginBottom="8dp"/>
+        <Button
+            android:id="@+id/btn_subscribe_channel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/channel_subscribe"
             android:layout_marginBottom="8dp"/>
         <LinearLayout
             android:id="@+id/list_channels"
