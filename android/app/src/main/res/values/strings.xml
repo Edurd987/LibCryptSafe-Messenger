@@ -81,6 +81,10 @@
     <string name="channel_create_ok">Create</string>
     <string name="channel_cancel">Cancel</string>
     <string name="channel_owned">(mine)</string>
+    <string name="channel_delete_title">Delete channel</string>
+    <string name="channel_delete_sub">Delete this channel? Posts will be removed from this device.</string>
+    <string name="channel_delete_owned">This is YOUR channel. Without a key backup you will NOT be able to publish to it again. Delete?</string>
+    <string name="channel_delete_ok">Delete</string>
     <string name="channel_subscribe">+ Subscribe</string>
     <string name="channel_sub_title">Subscribe to a channel</string>
     <string name="channel_id_hint">Channel ID</string>

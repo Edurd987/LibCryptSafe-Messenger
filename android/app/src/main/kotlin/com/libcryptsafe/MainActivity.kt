@@ -544,6 +544,22 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
     }
 
+    // Долгий тап -> удалить канал. Разное предупреждение: свой (необратимо) vs подписка (безопасно).
+    private fun confirmDeleteChannel(channelId: String, title: String, isOwned: Boolean) {
+        val msg = if (isOwned) getString(R.string.channel_delete_owned) else getString(R.string.channel_delete_sub)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.channel_delete_title) + ": " + title)
+            .setMessage(msg)
+            .setPositiveButton(getString(R.string.channel_delete_ok)) { _, _ ->
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.deleteChannel(channelId) }
+                    refreshChannels()
+                }
+            }
+            .setNegativeButton(getString(R.string.channel_cancel), null)
+            .show()
+    }
+
     private fun refreshChannels() {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             val channels = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.getChannels() }
@@ -556,6 +572,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     setPadding(24, 24, 24, 24)
                     setTextColor(0xFFFFFFFF.toInt())
                     setOnClickListener { openChannel(ch.channelId, ch.title, ch.isOwned) }
+                    setOnLongClickListener { confirmDeleteChannel(ch.channelId, ch.title, ch.isOwned); true }
                 }
                 list.addView(tv)
             }
