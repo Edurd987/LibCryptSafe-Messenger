@@ -18,6 +18,7 @@ import com.libcryptsafe.PlayerType
 import com.libcryptsafe.db.AppDatabase
 import com.libcryptsafe.db.MessageEntity
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,6 +60,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
     }
     private var isConnected = false
+    private var pollingJob: kotlinx.coroutines.Job? = null
     // L1 Кирпич 4: приложение на переднем плане? Если да -> тихий тычок вместо баннера.
     private var isAppForeground = false
     private var reconnectAttempts = 0
@@ -616,9 +618,24 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         fetchChannelFromRelay(channelId)   // тянем свежие посты с relay
     }
 
+    // Brick 3: short-polling of the relay with jitter for background feed refresh.
+    private fun startChannelPolling() {
+        pollingJob?.cancel()
+        pollingJob = lifecycleScope.launch {
+            while (isActive) {
+                val jitter = (115_000..125_000).random().toLong()
+                kotlinx.coroutines.delay(jitter)
+                val channels = withContext(kotlinx.coroutines.Dispatchers.IO) { channelRepo.getChannels() }
+                for (ch in channels) fetchChannelFromRelay(ch.channelId)
+            }
+        }
+    }
+    private fun stopChannelPolling() {
+        pollingJob?.cancel()
+        pollingJob = null
+    }
     // Отправить пост на слепой relay: {channel_post, channelId, seq, payload:{ts,content,sig}}
     private fun sendPostToRelay(post: com.libcryptsafe.db.PostEntity) {
-        android.util.Log.i("CHAN_NET", "sendPostToRelay ВЫЗВАН seq=" + post.seq + " networkManager=" + (if (networkManager != null) "есть" else "NULL"))
         try {
             val payload = org.json.JSONObject().apply {
                 put("ts", post.timestamp)
@@ -631,15 +648,12 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 put("seq", post.seq)
                 put("payload", payload.toString())
             }.toString()
-            android.util.Log.i("CHAN_NET", "отправляю channel_post: " + envelope.take(100))
             networkManager?.sendJson(envelope)
-            android.util.Log.i("CHAN_NET", "sendJson вызван (не значит доставлен)")
-        } catch (e: Exception) { android.util.Log.e("CHAN_NET", "sendPost ОШИБКА: " + e.message) }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     // Запросить у relay посты канала с seq>lastSeq (инкрементальная докачка).
     private fun fetchChannelFromRelay(channelId: String) {
-        android.util.Log.i("CHAN_NET", "fetchChannelFromRelay ВЫЗВАН networkManager=" + (if (networkManager != null) "есть" else "NULL"))
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             val sinceSeq = withContext(kotlinx.coroutines.Dispatchers.IO) {
                 com.libcryptsafe.db.AppDatabase.getInstance(this@MainActivity).postDao().lastSeq(channelId) ?: 0L
@@ -649,8 +663,6 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 put("channelId", channelId)
                 put("sinceSeq", sinceSeq)
             }.toString()
-            android.util.Log.i("CHAN_NET", "fetch channelId ПОЛНЫЙ len=" + channelId.length + " val=" + channelId)
-            android.util.Log.i("CHAN_NET", "отправляю channel_fetch sinceSeq=" + sinceSeq)
             networkManager?.sendJson(req)
         }
     }
@@ -1357,10 +1369,12 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         if (!isConnected) {
             networkManager?.connect()
         }
+        startChannelPolling()
     }
     override fun onPause() {
         super.onPause()
         isAppForeground = false
+        stopChannelPolling()
     }
 
     override fun onDestroy() {

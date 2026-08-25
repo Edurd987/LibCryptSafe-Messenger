@@ -24,3 +24,9 @@ relay/^C
 *_BACKUP
 *.bak_*
 *.bak
+# Temporary debug scripts (session patch tools, not for repo)
+add_polldiag.py
+fast_jitter.py
+finalize_brick3.py
+fix_isactive.py
+patch_polling.py
