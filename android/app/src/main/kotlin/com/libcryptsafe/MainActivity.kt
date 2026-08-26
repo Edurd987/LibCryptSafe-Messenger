@@ -89,7 +89,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         .certificatePinner(certPinner)
         .build()
 
-    private val SERVER_URL = "wss://cryptsafe-relay.duckdns.org:8080"
+    private val SERVER_URL = "wss://cryptsafe-relay.duckdns.org:8080/api/v1/sync"
 
     // L1 уведомления: канал существует с первого запуска. Канон id = messages_channel.
     private fun createNotificationChannel() {
