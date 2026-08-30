@@ -80,8 +80,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // Защита от MITM даже при компрометации CA (гос-во выдаёт свой корневой
     // сертификат). Подставной сертификат -> отпечаток не совпадёт -> отказ.
     private val certPinner = okhttp3.CertificatePinner.Builder()
+        // A+ pinning: intermediate + root backup survive leaf renewal (LE renews ~30d before expiry, rotating the leaf key).
         .add("cryptsafe-relay.duckdns.org",
-             "sha256/i+9Ez+IPOKiaJpO05O1xzsEgmAyBDXymd3j4zJv3MGo=")
+             "sha256/brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=")  // YE1 intermediate — first line, survives leaf renewal
+        .add("cryptsafe-relay.duckdns.org",
+             "sha256/sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=")  // ISRG Root YE — backup if LE rotates intermediate
+        .add("cryptsafe-relay.duckdns.org",
+             "sha256/khIJt119KS3MHja5jvJhrYarWJUv+0WchZoq+Cz8S6I=")  // current leaf — transitional, safe to remove later
         .build()
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
