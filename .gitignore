@@ -30,3 +30,13 @@ fast_jitter.py
 finalize_brick3.py
 fix_isactive.py
 patch_polling.py
+
+# build/test artifacts (Aug 30)
+*.exe
+*.jar
+*.log
+*.bak
+*.bak-before-*
+*.tmp
+hello.kt
+patch_pin.py
