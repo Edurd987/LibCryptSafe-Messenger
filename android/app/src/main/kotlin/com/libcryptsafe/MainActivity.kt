@@ -841,8 +841,6 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     private fun setupGames() {
-        val toast = { android.widget.Toast.makeText(this, getString(R.string.game_dev), android.widget.Toast.LENGTH_SHORT).show() }
-        findViewById<LinearLayout>(R.id.card_chess).setOnClickListener { toast() }
         findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener {
             // Кирпич 5а: разделение режимов. Офлайн (локально/бот) НЕ трогает сеть;
             // онлайн идёт через GameManager (труба).
@@ -862,7 +860,6 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 }
                 .show()
         }
-        findViewById<LinearLayout>(R.id.card_go).setOnClickListener { toast() }
     }
 
     // Кнопка полного криптоудаления (двойное подтверждение, необратимо)
