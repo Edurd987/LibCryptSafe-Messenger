@@ -39,11 +39,54 @@ object ShortNardiModel {
     /** Начальная расстановка коротких нард (backgammon). ПОД-КИРПИЧ 3. */
     fun initShortNardi(): NardiGameState = notYet("initShortNardi (расстановка)")
 
-    /** Ход с БОЕМ: если to занят одной чужой фишкой — сбить её на бар.
-     *  Та же сигнатура, что applyMove длинных (для чистого диспетчера).
-     *  ПОД-КИРПИЧ 1. */
-    fun applyMoveShort(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameState =
-        notYet("applyMoveShort (бой)")
+    /** Ход с БОЕМ (ПОД-КИРПИЧ 1). Применяет УЖЕ ЛЕГАЛЬНЫЙ ход (легальность —
+     *  isLegalMoveShort, под-кирпич 2). Та же сигнатура, что applyMove длинных
+     *  (чистый полиморфизм для диспетчера).
+     *
+     *  to пусто / свои  -> обычное перемещение (встать / укрепить).
+     *  to = ОДНА чужая (blot) -> сбить её на бар СВОЕГО цвета, встать одной фишкой.
+     *  (to = 2+ чужих -> сюда не дойдёт: это отсеет isLegalMoveShort.)
+     *
+     *  headCount НЕ трогаем — в коротких нардах головы нет. mover берём от
+     *  ФИШКИ (from.player), не от turn, чтобы ход соперника из сети применялся
+     *  идентично локальному (event-sourcing). */
+    fun applyMoveShort(state: NardiGameState, fromIndex: Int, toIndex: Int): NardiGameState {
+        // Защита от мусорного ввода — как у длинных, возвращаем состояние без изменений.
+        if (fromIndex !in 0..23 || toIndex !in 0..23) return state
+        if (fromIndex == toIndex) return state
+        val from = state.board[fromIndex]
+        if (from.count <= 0 || from.player == PlayerType.NONE) return state  // ход из пустого
+        val mover = from.player  // цвет от двигаемой шашки, НЕ от turn
+        val to = state.board[toIndex]
+        val newBoard = state.board.toMutableList()
+
+        // 1. Снять одну шашку с fromIndex.
+        val newFromCount = from.count - 1
+        newBoard[fromIndex] = if (newFromCount == 0)
+            PointState(0, PlayerType.NONE)   // пункт опустел -> владелец сброшен
+        else
+            PointState(newFromCount, mover)
+
+        // 2. Занять toIndex. Определяем: бой или обычный ход.
+        var barWhite = state.barWhite
+        var barBlack = state.barBlack
+        val isBlot = to.count == 1 && to.player != PlayerType.NONE && to.player != mover
+        if (isBlot) {
+            // БОЙ: сбитая фишка (цвет to.player) уходит на бар СВОЕГО цвета.
+            when (to.player) {
+                PlayerType.WHITE -> barWhite += 1
+                PlayerType.BLACK -> barBlack += 1
+                PlayerType.NONE -> {} // недостижимо (isBlot требует != NONE)
+            }
+            newBoard[toIndex] = PointState(1, mover)   // РОВНО одна моя фишка (чужая ушла)
+        } else {
+            // Пусто или свои: обычное перемещение.
+            newBoard[toIndex] = PointState(to.count + 1, mover)
+        }
+
+        // headCount НЕ трогаем (короткие нарды головы не имеют).
+        return state.copy(board = newBoard, barWhite = barWhite, barBlack = barBlack)
+    }
 
     /** Легальность хода коротких + правило "с бара входить первым".
      *  ПОД-КИРПИЧ 2. */
