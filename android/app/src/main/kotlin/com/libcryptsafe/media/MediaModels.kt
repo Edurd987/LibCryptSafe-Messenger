@@ -68,6 +68,6 @@ class MediaControl(
 
 // Блюпринт-константы (зеркалят бумажный чертёж и тесты).
 object MediaLimits {
-    const val CHUNK_SIZE = 64 * 1024            // 64 KB
+    const val CHUNK_SIZE = 40 * 1024            // 40 KB (влезть в 64KB DoS-лимит после overhead)
     const val MAX_TRANSFER = 100L * 1024 * 1024 // 100 MB (видео сверх лимита — TODO)
 }
