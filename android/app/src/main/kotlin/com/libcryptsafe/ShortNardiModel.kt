@@ -36,8 +36,66 @@ object ShortNardiModel {
     private fun notYet(brick: String): Nothing =
         throw NotImplementedError("ShortNardiModel: $brick ещё не реализован (под-кирпич 0 — только каркас)")
 
-    /** Начальная расстановка коротких нард (backgammon). ПОД-КИРПИЧ 3. */
-    fun initShortNardi(): NardiGameState = notYet("initShortNardi (расстановка)")
+    // ===== МАРШРУТЫ (backgammon, игроки идут НАВСТРЕЧУ) =====
+    // ТОПОЛОГИЯ ДОКАЗАНА по стандарту международного backgammon (6 источников):
+    // у каждого игрока СВОЙ отсчёт пунктов 1..24, оба идут "к своему дому, 24->1".
+    // Пункт N белого = пункт (25-N) чёрного (одна физическая точка, зеркальная
+    // нумерация). Отображение на board[0..23] (физические пункты, индекс = пункт
+    // БЕЛОГО минус 1):
+    //   пункт N БЕЛОГО  -> board[N-1]      (белый 24 -> board[23], белый 1 -> board[0])
+    //   пункт N ЧЁРНОГО -> board[24-N]     (чёрный 24 -> board[0],  чёрный 1 -> board[23])
+    // Отсюда: WHITE идёт board[23]->board[0] (дом board[0..5]);
+    //         BLACK идёт board[0]->board[23] (дом board[18..23]). Навстречу.
+    // moveDistanceShort = разница позиций в маршруте = ход в "пунктах игрока"
+    // (то, чем считается кость). Определены ЯВНО массивами (как у длинных).
+    val SHORT_WHITE_ROUTE: List<Int> = (23 downTo 0).toList()   // 23,22,...,1,0
+    val SHORT_BLACK_ROUTE: List<Int> = (0..23).toList()          // 0,1,...,22,23
+
+    fun routeForShort(player: PlayerType): List<Int> = when (player) {
+        PlayerType.WHITE -> SHORT_WHITE_ROUTE
+        PlayerType.BLACK -> SHORT_BLACK_ROUTE
+        PlayerType.NONE -> emptyList()
+    }
+
+    /** Дистанция хода по маршруту игрока (число пунктов вперёд). >0 = вперёд к дому,
+     *  <=0 = назад/на месте (нелегально). Пример: WHITE 23->20 = 3 пункта. */
+    fun moveDistanceShort(player: PlayerType, fromIndex: Int, toIndex: Int): Int {
+        val route = routeForShort(player)
+        val fp = route.indexOf(fromIndex)
+        val tp = route.indexOf(toIndex)
+        if (fp < 0 || tp < 0) return -1
+        return tp - fp   // >0: продвижение вперёд по маршруту
+    }
+
+    /**
+     * Начальная расстановка международного backgammon (стандарт 2-5-3-5, ДОКАЗАНО).
+     * Каждый игрок: 2 на своём 24, 5 на 13, 3 на 8, 5 на 6 = 15 фишек.
+     * Транслировано в board[0..23] по топологии выше:
+     *   WHITE (пункт N -> board[N-1]): 24->b23, 13->b12, 8->b7, 6->b5
+     *   BLACK (пункт N -> board[24-N]): 24->b0, 13->b11, 8->b16, 6->b18
+     * dice=null, WHITE ходит первым, бар пуст. Стартовый pip-count 167 у обоих.
+     */
+    fun initShortNardi(): NardiGameState {
+        val board = MutableList(24) { PointState(0, PlayerType.NONE) }
+        // WHITE
+        board[23] = PointState(2, PlayerType.WHITE)
+        board[12] = PointState(5, PlayerType.WHITE)
+        board[7]  = PointState(3, PlayerType.WHITE)
+        board[5]  = PointState(5, PlayerType.WHITE)
+        // BLACK (зеркально)
+        board[0]  = PointState(2, PlayerType.BLACK)
+        board[11] = PointState(5, PlayerType.BLACK)
+        board[16] = PointState(3, PlayerType.BLACK)
+        board[18] = PointState(5, PlayerType.BLACK)
+        return NardiGameState(
+            board = board,
+            dice = null,
+            turn = PlayerType.WHITE,
+            headCount = 0,
+            barWhite = 0,
+            barBlack = 0
+        )
+    }
 
     /** Ход с БОЕМ (ПОД-КИРПИЧ 1). Применяет УЖЕ ЛЕГАЛЬНЫЙ ход (легальность —
      *  isLegalMoveShort, под-кирпич 2). Та же сигнатура, что applyMove длинных
