@@ -31,6 +31,8 @@ class MediaController(
     private val serializer: MediaSerializer
 ) {
     private val assembler = TransferManager()
+    // ephKey каждой идущей передачи (открытый, из расшифрованного INIT).
+    private val ephKeys = HashMap<TransferId, ByteArray>()
 
     /** Колбэк готового файла: (transferId, mediaKind, собранные байты). */
     var onMediaComplete: ((TransferId, MediaKind, ByteArray) -> Unit)? = null
@@ -42,16 +44,14 @@ class MediaController(
      * (init, затем чанки по порядку, затем done). Вызывающая сторона шлёт
      * каждую через sendGameEvent.
      *
-     * @param ephKeyEncrypted эфемерный ключ файла, УЖЕ зашифрованный сессионным
-     *        ключом получателя (шифрует вызывающая сторона — у неё сессия).
-     * @param ephKeyРlainForChunks тот же ephKey в ОТКРЫТОМ виде — им шифруются
-     *        чанки здесь (в память получателя он попадёт, расшифровав INIT.ephKey).
+     * @param ephKeyPlain эфемерный ключ файла (32B). Им шифруются чанки здесь;
+     *        он же кладётся ОТКРЫТЫМ в INIT — весь INIT-конверт затем шифруется
+     *        СЕССИОННЫМ ключом на слое отправки, так что ephKey защищён им.
      */
     fun buildTransfer(
         kind: MediaKind,
         fileBytes: ByteArray,
-        ephKeyPlain: ByteArray,
-        ephKeyEncrypted: ByteArray
+        ephKeyPlain: ByteArray
     ): List<String> {
         val out = ArrayList<String>()
         val transferId = TransferId(randomBytes(16))
@@ -71,7 +71,10 @@ class MediaController(
             sha256Full = sha,
             ephemeralKey = ByteArray(0)   // в модели пусто; зашифрованный едет в JSON отдельно
         )
-        out.add(serializer.serializeInit(init, ephKeyEncrypted).toString())
+        // ephKey едет ОТКРЫТЫМ внутри INIT: весь конверт шифруется СЕССИОННЫМ
+        // ключом на слое отправки (encryptMessage), так что relay видит только
+        // зашифрованный конверт. Двойного шифрования ephKey не делаем.
+        out.add(serializer.serializeInit(init, ephKeyPlain).toString())
 
         // CHUNKS: каждый шифруется ЭФЕМЕРНЫМ ключом, потом сериализуется
         var seq = 0
@@ -96,25 +99,25 @@ class MediaController(
      * Обработать расшифрованный (сессионным ключом) контент. Возвращает true,
      * если это медиа (контроллер обработал), false — если обычный текст.
      *
-     * @param ephKeyPlainProvider по transferId вернуть ОТКРЫТЫЙ ephKey (получен
-     *        расшифровкой INIT.ephKey сессионным ключом — делает вызывающая
-     *        сторона; здесь только сборка).
+     * ephKey контроллер хранит сам из расшифрованного INIT — вызывающей стороне
+     * не нужно его прокидывать.
      */
-    fun onIncoming(rawDecrypted: String, ephKeyPlainProvider: (TransferId) -> ByteArray?): Boolean {
+    fun onIncoming(rawDecrypted: String): Boolean {
         val json = try { JSONObject(rawDecrypted) } catch (e: Exception) { return false }
         val type = serializer.typeOf(json) ?: return false   // не медиа -> обычный текст
 
         when (type) {
             ContentType.MEDIA_INIT -> {
                 val parsed = serializer.parseInit(json) ?: return true
-                val (init, _) = parsed
+                val (init, ephKeyPlain) = parsed   // ephKey открытый (конверт уже расшифрован сессионным)
                 assembler.onInit(init)
+                ephKeys[init.transferId] = ephKeyPlain
                 android.util.Log.i("MEDIA_RECV", "INIT: ${init.totalChunks} чанков ждём")
             }
             ContentType.MEDIA_CHUNK -> {
                 val enc = serializer.parseChunk(json) ?: return true
-                val key = ephKeyPlainProvider(enc.transferId) ?: run {
-                    android.util.Log.w("MEDIA_RECV", "нет ephKey для transferId — чанк пропущен")
+                val key = ephKeys[enc.transferId] ?: run {
+                    android.util.Log.w("MEDIA_RECV", "нет ephKey (INIT не пришёл?) — чанк пропущен")
                     return true
                 }
                 val plain = try { crypto.decryptChunk(key, enc) }
@@ -135,6 +138,7 @@ class MediaController(
                         // mediaKind знаем из INIT — упрощённо PHOTO (уточним при UI)
                         onMediaComplete?.invoke(done.transferId, MediaKind.PHOTO, file)
                         assembler.forget(done.transferId)
+                        ephKeys.remove(done.transferId)
                     }
                 } else {
                     android.util.Log.w("MEDIA_RECV", "DONE, но не хватает ${miss.size} чанков: $miss")
