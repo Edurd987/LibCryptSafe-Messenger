@@ -450,6 +450,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // Карточки игр (пока заглушки — игры в разработке)
     // Каналы: создание через диалог (только имя), генерация пары, запись в БД
     private val channelRepo by lazy { ChannelRepository(this) }
+    // МЕДИА (Этап 2): чистый контроллер, свои зависимости; НЕ тянет db/сеть.
+    private val mediaController by lazy {
+        com.libcryptsafe.media.MediaController(
+            com.libcryptsafe.media.MediaCrypto(com.libcryptsafe.media.NativeChunkCipher()),
+            com.libcryptsafe.media.MediaSerializer(com.libcryptsafe.media.AndroidBase64Codec())
+        )
+    }
     private fun setupChannels() {
         findViewById<android.widget.Button>(R.id.btn_create_channel).setOnClickListener {
             val input = android.widget.EditText(this).apply {
@@ -1211,6 +1218,32 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 networkManager?.sendJson(envelope)
                 android.util.Log.i("GAME_SEND", "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435 -> $targetId")
             }
+        }
+    }
+
+    // МЕДИА-ОТПРАВКА (Этап 2, пока зовётся только из теста Этапа 3).
+    // Готовит конверты через mediaController.buildTransfer и шлёт КАЖДЫЙ через
+    // существующий sendGameEvent (та же проверенная труба, что игровые события:
+    // сессионное шифрование -> CHAT_ENCRYPTED -> msg). ephKey генерит контроллер.
+    //
+    // !!! МАЯК BACKPRESSURE (НЕ решено — отдельный кирпич Этапа 2.5): sendGameEvent
+    // сам делает lifecycleScope.launch, поэтому N конвертов вылетают N корутинами
+    // ПОЧТИ ОДНОВРЕМЕННО. На БОЛЬШОМ файле (десятки чанков) это может переполнить
+    // буфер сокета и/или прийти НЕ ПО ПОРЯДКУ. TransferManager на приёме собирает
+    // неупорядоченно (это ок), но сокет может захлебнуться. Пока ТЕСТИРУЕМ ТОЛЬКО
+    // МАЛЫЙ файл (<=3 чанка ~120KB). Реальные фото — после кирпича backpressure
+    // (последовательная отправка + пауза при переполнении bufferedAmount).
+    private fun sendMedia(targetId: String, kind: com.libcryptsafe.media.MediaKind, bytes: ByteArray) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val ephKey = mediaController.newEphemeralKeyForSend()   // 32B, живёт один файл
+            val envelopes = mediaController.buildTransfer(kind, bytes, ephKey)
+            android.util.Log.i("MEDIA_SEND", "готовим ${envelopes.size} конвертов -> $targetId")
+            if (envelopes.size > 5) android.util.Log.w("MEDIA_SEND",
+                "ВНИМАНИЕ: ${envelopes.size} конвертов залпом — backpressure не решён, риск на большом файле")
+            for (env in envelopes) {
+                sendGameEvent(targetId, env)   // каждый конверт как игровое событие
+            }
+            android.util.Log.i("MEDIA_SEND", "все конверты поставлены в отправку -> $targetId")
         }
     }
 

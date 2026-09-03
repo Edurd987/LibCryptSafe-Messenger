@@ -37,6 +37,10 @@ class MediaController(
     /** Колбэк готового файла: (transferId, mediaKind, собранные байты). */
     var onMediaComplete: ((TransferId, MediaKind, ByteArray) -> Unit)? = null
 
+    /** Сгенерировать эфемерный ключ для новой отправки (32B AES-256). Вызывающая
+     *  сторона (MainActivity) передаёт его обратно в buildTransfer. */
+    fun newEphemeralKeyForSend(): ByteArray = crypto.newEphemeralKey()
+
     // ---------------- ОТПРАВКА ----------------
 
     /**
