@@ -1065,6 +1065,18 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         gameManager.handleGameEvent(peerId, j)
                         return
                     }
+                    // === МАЯК МЕДИА (Этап 2, коммит 2) — единственное касание живой логики ===
+                    // Перехват ТОЛЬКО media_*: onIncoming вернёт true, если это медиа (обработал),
+                    // false — если нет (падаем дальше к ack/чату как раньше). try/catch = fail-safe:
+                    // баг в медиа-парсинге НЕ уронит чат (лог + течём дальше). Для не-медиа ветка
+                    // вообще не входит -> поведение чата/каналов/ack ИДЕНТИЧНО прежнему.
+                    if (type.startsWith("media_")) {
+                        try {
+                            if (mediaController.onIncoming(raw)) return
+                        } catch (e: Exception) {
+                            android.util.Log.e("MEDIA_RECV", "media fail (chat не тронут): ${e.message}")
+                        }
+                    }
                     val ack = j.optString("a", "")
                     if (ack.isNotEmpty()) { markDelivered(ack); return }
                     val n = j.optString("n", "")
