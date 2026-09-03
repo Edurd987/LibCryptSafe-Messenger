@@ -40,3 +40,7 @@ patch_polling.py
 *.tmp
 hello.kt
 patch_pin.py
+
+# session backups + one-shot patch scripts (Sep — cover dash-suffix + all patch_*)
+*.bak-*
+patch_*.py
