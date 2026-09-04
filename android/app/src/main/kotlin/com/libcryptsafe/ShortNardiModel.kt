@@ -184,4 +184,73 @@ object ShortNardiModel {
 
         return true
     }
+
+    // ===== ВХОД С БАРА (ПОД-КИРПИЧ 2b) =====
+    // Отдельные методы — доказанные applyMoveShort/isLegalMoveShort НЕ трогаем.
+    // ФОРМУЛЫ ВХОДА (доказаны по стандарту backgammon + нашей топологии):
+    //   фишка с бара по кости D входит на пункт D дома СОПЕРНИКА:
+    //     WHITE -> board[24-D]  (кость 1->b23 ... кость 6->b18, дом чёрных b18..23)
+    //     BLACK -> board[D-1]   (кость 1->b0  ... кость 6->b5,  дом белых b0..5)
+    // Правила: пока фишка на баре — ТОЛЬКО вход (обычные ходы блокирует
+    // isLegalMoveShort п.2); вход костью D нелегален, если пункт входа ЗАКРЫТ
+    // (2+ чужих); при входе можно СБИТЬ blot (1 чужая) на бар соперника.
+
+    /** Пункт входа с бара для игрока по кости D (1..6). board-индекс. */
+    fun barEntryPoint(player: PlayerType, die: Int): Int = when (player) {
+        PlayerType.WHITE -> 24 - die     // 1->23 ... 6->18
+        PlayerType.BLACK -> die - 1      // 1->0  ... 6->5
+        PlayerType.NONE  -> -1
+    }
+
+    /**
+     * Легален ли вход с бара костью die для игрока turn.
+     * Требует: у игрока есть фишка на баре, кость в 1..6, пункт входа НЕ закрыт
+     * (не 2+ чужих). Занят своими/пустой/blot — вход легален.
+     */
+    fun isLegalBarEntry(state: NardiGameState, die: Int): Boolean {
+        val player = state.turn
+        val myBar = if (player == PlayerType.WHITE) state.barWhite else state.barBlack
+        if (myBar <= 0) return false             // на баре пусто — входить нечего
+        if (die !in 1..6) return false
+        val dice = state.dice ?: return false
+        if (die !in dice) return false           // такой кости нет
+        val idx = barEntryPoint(player, die)
+        if (idx !in 0..23) return false
+        val pt = state.board[idx]
+        // закрыт, если 2+ чужих
+        if (pt.count >= 2 && pt.player != PlayerType.NONE && pt.player != player) return false
+        return true
+    }
+
+    /**
+     * Применить вход с бара костью die. Считает ход УЖЕ легальным (проверка —
+     * isLegalBarEntry). Убирает фишку с бара игрока, ставит в пункт входа;
+     * если там blot соперника — сбивает его на бар соперника. НЕ трогает dice
+     * (трата кости — на уровне выше, как у обычных ходов).
+     */
+    fun applyBarEntry(state: NardiGameState, die: Int): NardiGameState {
+        val player = state.turn
+        val idx = barEntryPoint(player, die)
+        if (idx !in 0..23) return state
+        val nb = state.board.toMutableList()
+        var barWhite = state.barWhite
+        var barBlack = state.barBlack
+        // снять одну свою фишку с бара
+        if (player == PlayerType.WHITE) barWhite -= 1 else barBlack -= 1
+
+        val pt = nb[idx]
+        val isBlot = pt.count == 1 && pt.player != PlayerType.NONE && pt.player != player
+        if (isBlot) {
+            // сбитая чужая -> на бар СВОЕГО цвета
+            when (pt.player) {
+                PlayerType.WHITE -> barWhite += 1
+                PlayerType.BLACK -> barBlack += 1
+                PlayerType.NONE -> {}
+            }
+            nb[idx] = PointState(1, player)       // одна моя фишка (чужая ушла)
+        } else {
+            nb[idx] = PointState(pt.count + 1, player)  // пусто/свои -> +1
+        }
+        return state.copy(board = nb, barWhite = barWhite, barBlack = barBlack)
+    }
 }
