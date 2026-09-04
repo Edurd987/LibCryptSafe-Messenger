@@ -146,8 +146,42 @@ object ShortNardiModel {
         return state.copy(board = newBoard, barWhite = barWhite, barBlack = barBlack)
     }
 
-    /** Легальность хода коротких + правило "с бара входить первым".
-     *  ПОД-КИРПИЧ 2. */
-    fun isLegalMoveShort(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean =
-        notYet("isLegalMoveShort (правила + вход с бара)")
+    /**
+     * Легальность ОБЫЧНОГО хода коротких нард (ПОД-КИРПИЧ 2a: пункт->пункт внутри
+     * доски). НЕ покрывает вход с бара (from==-1, кирпич 2b) и выброс (to==-1,
+     * отдельный кирпич) — для них возвращает false (не наш случай здесь).
+     *
+     * Порядок проверок (приоритет важен):
+     *  1. Базовая валидация: from/to в 0..23, кости брошены, from не пуст,
+     *     ход СВОИМ цветом в СВОЙ ход (from.player == turn).
+     *  2. Бар-приоритет: если у игрока есть фишки на баре (barX>0) — обычные
+     *     ходы ЗАПРЕЩЕНЫ (сначала войти с бара, кирпич 2b). Здесь -> false.
+     *  3. Дистанция по кости: moveDistanceShort > 0 (вперёд) И равна одной из костей.
+     *  4. Закрытый пункт: to занят 2+ ЧУЖИМИ -> нелегально.
+     * NB: backgammon НЕ имеет правила 6-блока (prime легален) — creates6Block НЕ зовём.
+     */
+    fun isLegalMoveShort(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
+        // Спец-ходы (бар/выброс) — не этот кирпич.
+        if (fromIndex !in 0..23 || toIndex !in 0..23) return false
+        val dice = state.dice ?: return false
+        val from = state.board[fromIndex]
+        if (from.count <= 0 || from.player == PlayerType.NONE) return false
+        val mover = from.player
+        if (mover != state.turn) return false   // только своим цветом в свой ход
+
+        // 2. Бар-приоритет: пока фишка на баре — обычные ходы запрещены.
+        val myBar = if (mover == PlayerType.WHITE) state.barWhite else state.barBlack
+        if (myBar > 0) return false   // должен сперва войти с бара (кирпич 2b)
+
+        // 3. Дистанция по маршруту игрока == одна из костей, и только ВПЕРЁД.
+        val dist = moveDistanceShort(mover, fromIndex, toIndex)
+        if (dist <= 0) return false              // назад/на месте нелегально
+        if (dist !in dice) return false          // нет такой кости
+
+        // 4. Закрытый пункт: to занят 2+ чужими фишками.
+        val to = state.board[toIndex]
+        if (to.count >= 2 && to.player != PlayerType.NONE && to.player != mover) return false
+
+        return true
+    }
 }
