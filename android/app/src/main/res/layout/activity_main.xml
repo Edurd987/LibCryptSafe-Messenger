@@ -526,7 +526,8 @@
                 android:textSize="13sp"
                 android:paddingTop="8dp"/>
         </LinearLayout>
-    </ScrollView>
+    </ScrollView>
+
     <ScrollView
         android:id="@+id/container_channels"
         android:layout_width="match_parent"
@@ -544,7 +545,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/channel_create"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="8dp"/>
+
         <Button
             android:id="@+id/btn_subscribe_channel"
             android:layout_width="match_parent"
@@ -557,7 +559,8 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"/>
         </LinearLayout>
-    </ScrollView>
+    </ScrollView>
+
     <LinearLayout
         android:id="@+id/container_posts"
         android:layout_width="match_parent"
@@ -639,6 +642,15 @@
             android:gravity="center_vertical"
             android:maxLines="1"
             android:textSize="16sp"/>
+        <ImageButton
+            android:id="@+id/btn_attach_photo"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="9dp"
+            android:src="@android:drawable/ic_menu_gallery"
+            android:scaleType="centerInside"
+            android:background="@drawable/btn_send_bg"
+            android:contentDescription="photo"/>
         <Button
             android:id="@+id/btn_send"
             android:padding="0dp"

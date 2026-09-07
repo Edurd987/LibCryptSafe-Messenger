@@ -168,8 +168,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             saveLastPeerId(peerId)
             handleIncoming(content)
         }
-    }
-
+    }
+
     override fun onChannelPosts(channelId: String, posts: List<IncomingPost>) {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -384,6 +384,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
         networkManager = NetworkManager(SERVER_URL, client, myStableId, myPubKey, applicationContext, this)
         networkManager?.connect()
+        findViewById<android.widget.ImageButton>(R.id.btn_attach_photo).setOnClickListener {
+            startPhotoPicker()
+        }
         findViewById<Button>(R.id.btn_send).setOnClickListener {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -455,7 +458,14 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         com.libcryptsafe.media.MediaController(
             com.libcryptsafe.media.MediaCrypto(com.libcryptsafe.media.NativeChunkCipher()),
             com.libcryptsafe.media.MediaSerializer(com.libcryptsafe.media.AndroidBase64Codec())
-        )
+        ).also { mc ->
+            // МАЯК ПРИЁМА (Этап 3, тест): собранный файл -> лог SHA (сверить с отправителем).
+            mc.onMediaComplete = { _, _, bytes ->
+                val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+                    .joinToString("") { "%02x".format(it) }.take(16)
+                android.util.Log.i("MEDIA_TEST", "СОБРАНО ${bytes.size}B sha=$sha")
+            }
+        }
     }
     private fun setupChannels() {
         findViewById<android.widget.Button>(R.id.btn_create_channel).setOnClickListener {
@@ -512,6 +522,66 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             })
         } else {
             android.widget.Toast.makeText(this, getString(R.string.channel_id_hint), android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ===== ФОТО (UI-1): системный Photo Picker (БЕЗ разрешений на Android 13+) =====
+    private val photoPickerLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) handleSelectedPhoto(uri)
+    }
+
+    private fun startPhotoPicker() {
+        if (currentPeerId == "UNKNOWN" || currentPeerId.isEmpty()) {
+            android.widget.Toast.makeText(this, "Сначала выбери контакт", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        photoPickerLauncher.launch(
+            androidx.activity.result.PickVisualMediaRequest.Builder()
+                .setMediaType(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)
+                .build()
+        )
+    }
+
+    private fun handleSelectedPhoto(uri: android.net.Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val bitmap = contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it)
+                }
+                if (bitmap == null) {
+                    runOnUiThread { android.widget.Toast.makeText(this@MainActivity, "не удалось прочитать фото", android.widget.Toast.LENGTH_SHORT).show() }
+                    return@launch
+                }
+                val jpeg = compressToLimit(bitmap, 100 * 1024)
+                // OPSEC: без размера/peerId в логе (метаданные связи).
+                android.util.Log.i("MEDIA_UI", "photo selected, sending")
+                runOnUiThread { addMessage("\uD83D\uDCF7 \u0444\u043e\u0442\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442\u0441\u044f (${jpeg.size/1024}KB)...", isOwn = true) }
+                sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.PHOTO, jpeg)
+            } catch (e: Exception) {
+                android.util.Log.e("MEDIA_UI", "photo pick error")
+            }
+        }
+    }
+
+    // Сжимает Bitmap в JPEG <= limitBytes: quality 90->20, потом уменьшает разрешение вдвое.
+    private fun compressToLimit(src: android.graphics.Bitmap, limitBytes: Int): ByteArray {
+        var bmp = src
+        while (true) {
+            for (q in 90 downTo 20 step 10) {
+                val out = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, q, out)
+                val bytes = out.toByteArray()
+                if (bytes.size <= limitBytes) return bytes
+            }
+            val nw = bmp.width / 2; val nh = bmp.height / 2
+            if (nw < 100 || nh < 100) {
+                val out = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 20, out)
+                return out.toByteArray()
+            }
+            bmp = android.graphics.Bitmap.createScaledBitmap(bmp, nw, nh, true)
         }
     }
 
