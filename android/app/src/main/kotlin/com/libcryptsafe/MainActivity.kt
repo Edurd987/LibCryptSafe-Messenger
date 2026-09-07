@@ -459,11 +459,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             com.libcryptsafe.media.MediaCrypto(com.libcryptsafe.media.NativeChunkCipher()),
             com.libcryptsafe.media.MediaSerializer(com.libcryptsafe.media.AndroidBase64Codec())
         ).also { mc ->
-            // МАЯК ПРИЁМА (Этап 3, тест): собранный файл -> лог SHA (сверить с отправителем).
-            mc.onMediaComplete = { _, _, bytes ->
-                val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
-                    .joinToString("") { "%02x".format(it) }.take(16)
-                android.util.Log.i("MEDIA_TEST", "СОБРАНО ${bytes.size}B sha=$sha")
+            // Приём готового файла. Тело — в UI-2 (сохранить + показать как фото в чате).
+            mc.onMediaComplete = { _, _, _bytes ->
+                // TODO UI-2: сохранить _bytes, отрисовать ImageView в ленте чата.
             }
         }
     }
