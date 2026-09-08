@@ -253,4 +253,96 @@ object ShortNardiModel {
         }
         return state.copy(board = nb, barWhite = barWhite, barBlack = barBlack)
     }
+
+    // ===== ВЫБРОС (BEAR-OFF, ПОД-КИРПИЧ 2c) =====
+    // Дом (все фишки обязаны собраться тут перед выбросом) — СВОЙ у каждого,
+    // НЕ как у длинных (12..17). По ДОКАЗАННОЙ топологии коротких:
+    //   WHITE идёт board[23]->board[0], дом board[0..5], сход за board[0].
+    //   BLACK идёт board[0]->board[23], дом board[18..23], сход за board[23].
+    // Дистанция до схода = длина маршрута - позиция в маршруте:
+    //   WHITE: 24-(23-p) = p+1   (b0->1 ... b5->6)
+    //   BLACK: 24-p              (b23->1 ... b18->6)
+    // ВНИМАНИЕ: НЕ "24-pos" для обоих (для WHITE это p+1). Считаем ЧЕРЕЗ маршрут,
+    // чтобы формула стояла на доказанной топологии, а не на догадке.
+    // Сентинел выброса у диспетчера: toIndex == -1 (здесь метод берёт fromIndex).
+
+    /** Пункты дома игрока (куда обязаны собраться все фишки перед выбросом). */
+    fun homePointsShort(player: PlayerType): IntRange = when (player) {
+        PlayerType.WHITE -> 0..5
+        PlayerType.BLACK -> 18..23
+        PlayerType.NONE  -> IntRange.EMPTY
+    }
+
+    /** Пипов до схода из пункта index (длина маршрута - позиция). -1 если пункт
+     *  не на маршруте игрока. */
+    fun distToOffShort(player: PlayerType, index: Int): Int {
+        val route = routeForShort(player)
+        val rp = route.indexOf(index)
+        if (rp < 0) return -1
+        return route.size - rp   // route.size==24; WHITE -> p+1, BLACK -> 24-p
+    }
+
+    /** Все ли фишки игрока в доме И бар пуст (предусловие выброса). */
+    fun allHomeShort(state: NardiGameState, player: PlayerType): Boolean {
+        val myBar = if (player == PlayerType.WHITE) state.barWhite else state.barBlack
+        if (myBar > 0) return false                 // фишка на баре -> не все дома
+        val home = homePointsShort(player)
+        for (i in state.board.indices) {
+            val pt = state.board[i]
+            if (pt.player == player && pt.count > 0 && i !in home) return false
+        }
+        return true
+    }
+
+    /**
+     * Легален ли ВЫБРОС из fromIndex костью die (ход игрока state.turn).
+     * Требует: все фишки дома (бар пуст), fromIndex в доме и занят своим,
+     * die доступна.
+     *   die == дистанция -> точный выброс.
+     *   die  < дистанция -> НЕ выброс (обычный ход внутри доски) -> false.
+     *   die  > дистанция -> выброс большей костью ТОЛЬКО с самой ДАЛЬНЕЙ занятой
+     *                       точки: false, если есть своя фишка дальше от схода.
+     */
+    fun canBearOffShort(state: NardiGameState, fromIndex: Int, die: Int): Boolean {
+        val player = state.turn
+        if (!allHomeShort(state, player)) return false
+        val home = homePointsShort(player)
+        if (fromIndex !in home) return false
+        val pt = state.board[fromIndex]
+        if (pt.count <= 0 || pt.player != player) return false
+        val dice = state.dice ?: return false
+        if (die !in 1..6 || die !in dice) return false
+        val need = distToOffShort(player, fromIndex)
+        if (need <= 0) return false
+        if (die == need) return true                // точный выброс
+        if (die < need) return false                // недолёт -> обычный ход, не выброс
+        // die > need: только с самой дальней — нет своих фишек дальше от схода.
+        for (i in home) {
+            if (i == fromIndex) continue
+            val q = state.board[i]
+            if (q.player == player && q.count > 0 && distToOffShort(player, i) > need) return false
+        }
+        return true
+    }
+
+    /**
+     * Применить ВЫБРОС из fromIndex (ход УЖЕ легален — canBearOffShort). Снимает
+     * одну фишку, инкрементит born-off СВОЕГО цвета. Цвет берём от ФИШКИ
+     * (from.player), НЕ от turn — event-sourcing. dice НЕ трогаем (трата кости —
+     * уровнем выше, как в applyMoveShort/applyBarEntry).
+     */
+    fun applyBearOffShort(state: NardiGameState, fromIndex: Int): NardiGameState {
+        if (fromIndex !in 0..23) return state
+        val from = state.board[fromIndex]
+        if (from.count <= 0 || from.player == PlayerType.NONE) return state
+        val player = from.player
+        val nb = state.board.toMutableList()
+        val newCount = from.count - 1
+        nb[fromIndex] = if (newCount == 0) PointState(0, PlayerType.NONE)
+                        else PointState(newCount, player)
+        var offW = state.bornOffWhite
+        var offB = state.bornOffBlack
+        if (player == PlayerType.WHITE) offW += 1 else offB += 1
+        return state.copy(board = nb, bornOffWhite = offW, bornOffBlack = offB)
+    }
 }
