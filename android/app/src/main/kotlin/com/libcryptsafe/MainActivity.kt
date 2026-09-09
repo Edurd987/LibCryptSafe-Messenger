@@ -460,8 +460,35 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             com.libcryptsafe.media.MediaSerializer(com.libcryptsafe.media.AndroidBase64Codec())
         ).also { mc ->
             // Приём готового файла. Тело — в UI-2 (сохранить + показать как фото в чате).
-            mc.onMediaComplete = { _, _, _bytes ->
-                // TODO UI-2: сохранить _bytes, отрисовать ImageView в ленте чата.
+            mc.onMediaComplete = { _, _, bytes ->
+                // UI-2: входящее фото -> Bitmap -> ImageView в ленте. IN-MEMORY:
+                // байты НЕ пишем на диск (форензик-след на изъятом телефоне —
+                // тот самый метаданный риск, от которого весь проект). Дисковая
+                // персистентность (шифровать/TTL/ручное сохранить) — отдельный
+                // OPSEC-кирпич позже, осознанным решением.
+                runOnUiThread {
+                    val bmp = try {
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    } catch (e: Exception) { null }
+                    if (bmp != null) {
+                        val iv = android.widget.ImageView(this@MainActivity).apply {
+                            setImageBitmap(bmp)
+                            adjustViewBounds = true
+                            maxWidth = (resources.displayMetrics.widthPixels * 0.8).toInt()
+                            setPadding(8, 8, 8, 8)
+                            setBackgroundResource(R.drawable.bubble_other)
+                        }
+                        // OPSEC: без peerId/размера — только факт приёма.
+                        android.util.Log.d("MEDIA_RECV", "photo shown")
+                        addBubbleView(iv, isOwn = false)
+                    } else {
+                        // decode вернул null (битые/недособранные байты) — НЕ молча
+                        // пустой прямоугольник (это выглядело бы как \"фото не пришло\"),
+                        // а честный видимый маркер приёма.
+                        android.util.Log.w("MEDIA_RECV", "decode failed, placeholder shown")
+                        addMessage("\uD83D\uDDBC не удалось отобразить", isOwn = false)
+                    }
+                }
             }
         }
     }
@@ -1281,23 +1308,34 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // но БЕЗ чат-обёртки (n/t) и БЕЗ addMessage — game-JSON шифруется как есть.
     // gameJson уже содержит {v:1, type:"GAME_...", gameId, seq, ...} на верхнем уровне,
     // чтобы труба в handleDecrypted увидела type сразу после расшифровки.
+    /** Зашифровать и отправить ОДИН конверт СИНХРОННО (в текущей корутине, без
+     *  своего launch). Одна точка правды на «сессия -> шифр -> msg-envelope ->
+     *  sendJson». sendJson синхронный (OkHttp send() c внутренней FIFO), поэтому
+     *  ПОСЛЕДОВАТЕЛЬНЫЕ вызовы из ОДНОЙ корутины сохраняют порядок на проводе —
+     *  это и чинит гонку init/chunk/done в медиа. */
+    private suspend fun sendGameEnvelopeSync(targetId: String, gameJson: String) {
+        val session = db.sessionDao().getSession(targetId)
+        if (session == null) {
+            android.util.Log.w("GAME_SEND", "\u043d\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u0438 \u0441 $targetId")
+            return
+        }
+        val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, gameJson)
+        if (pkt != null) {
+            val payloadB64 = Base64.encodeToString(
+                pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            val envelope = JSONObject().apply {
+                put("type", "msg"); put("to", targetId); put("payload", payloadB64)
+            }.toString()
+            networkManager?.sendJson(envelope)
+            android.util.Log.i("GAME_SEND", "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435 -> $targetId")
+        }
+    }
+
+    /** Игровое событие: обёртка над sendGameEnvelopeSync в своей корутине.
+     *  Поведение для игр не меняется (одно событие = одна корутина). */
     fun sendGameEvent(targetId: String, gameJson: String) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val session = db.sessionDao().getSession(targetId)
-            if (session == null) {
-                android.util.Log.w("GAME_SEND", "\u043d\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u0438 \u0441 $targetId")
-                return@launch
-            }
-            val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, gameJson)
-            if (pkt != null) {
-                val payloadB64 = Base64.encodeToString(
-                    pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-                val envelope = JSONObject().apply {
-                    put("type", "msg"); put("to", targetId); put("payload", payloadB64)
-                }.toString()
-                networkManager?.sendJson(envelope)
-                android.util.Log.i("GAME_SEND", "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435 -> $targetId")
-            }
+            sendGameEnvelopeSync(targetId, gameJson)
         }
     }
 
@@ -1320,10 +1358,15 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             android.util.Log.i("MEDIA_SEND", "готовим ${envelopes.size} конвертов -> $targetId")
             if (envelopes.size > 5) android.util.Log.w("MEDIA_SEND",
                 "ВНИМАНИЕ: ${envelopes.size} конвертов залпом — backpressure не решён, риск на большом файле")
-            for (env in envelopes) {
-                sendGameEvent(targetId, env)   // каждый конверт как игровое событие
+            // ПОСЛЕДОВАТЕЛЬНО в ЭТОЙ корутине (не sendGameEvent — тот плодит
+            // корутину на конверт -> гонка init/chunk/done, DONE обгонял чанки).
+            // sendJson синхронный (OkHttp FIFO), поэтому порядок держится. delay(15)
+            // -> страховка от переупорядочивания на relay при близких send().
+            for ((i, env) in envelopes.withIndex()) {
+                sendGameEnvelopeSync(targetId, env)
+                if (i < envelopes.size - 1) kotlinx.coroutines.delay(15)
             }
-            android.util.Log.i("MEDIA_SEND", "все конверты поставлены в отправку -> $targetId")
+            android.util.Log.i("MEDIA_SEND", "все конверты отправлены ПО ПОРЯДКУ -> $targetId")
         }
     }
 
@@ -1444,6 +1487,14 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             setBackgroundResource(if (isOwn) R.drawable.bubble_mine else R.drawable.bubble_other)
             setTextColor(if (isOwn) 0xFFCFFFE0.toInt() else 0xFFD5DCE4.toInt())
         }
+        if (nonce != null) nonceToViewMap[nonce] = tv
+        addBubbleView(tv, isOwn)
+    }
+
+    /** Единая укладка бабла в ленту: те же LayoutParams (gravity/поля 80) для
+     *  ЛЮБОГО View — TextView и ImageView ложатся идентично по построению, одна
+     *  точка правды на геометрию бабла. */
+    private fun addBubbleView(view: android.view.View, isOwn: Boolean) {
         val params = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1453,8 +1504,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             marginStart  = if (isOwn) 80 else 0
             marginEnd    = if (isOwn) 0 else 80
         }
-        if (nonce != null) nonceToViewMap[nonce] = tv
-        containerMessages.addView(tv, params)
+        containerMessages.addView(view, params)
         scrollMessages.post { scrollMessages.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 

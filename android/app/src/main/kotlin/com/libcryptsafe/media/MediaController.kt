@@ -37,6 +37,11 @@ class MediaController(
     /** Колбэк готового файла: (transferId, mediaKind, собранные байты). */
     var onMediaComplete: ((TransferId, MediaKind, ByteArray) -> Unit)? = null
 
+    // Устойчивость к порядку доставки: transferId, для которых DONE уже пришёл.
+    // Финализация срабатывает, когда корзина полна — в DONE-ветке ИЛИ позже в
+    // CHUNK-ветке (если последний чанк опоздал за DONE, гонка на 6мс из логов).
+    private val doneSeen = HashSet<TransferId>()
+
     /** Сгенерировать эфемерный ключ для новой отправки (32B AES-256). Вызывающая
      *  сторона (MainActivity) передаёт его обратно в buildTransfer. */
     fun newEphemeralKeyForSend(): ByteArray = crypto.newEphemeralKey()
@@ -131,26 +136,37 @@ class MediaController(
                     }
                 assembler.onChunk(plain)
                 android.util.Log.d("MEDIA_RECV", "CHUNK seq=${plain.seq} принят")
+                // Если DONE уже приходил и это был последний недостающий чанк —
+                // собрать здесь (DONE-ветка тогда «не хватало», но теперь полно).
+                if (enc.transferId in doneSeen) tryFinalize(enc.transferId)
             }
             ContentType.MEDIA_DONE -> {
                 val done = serializer.parseDone(json) ?: return true
-                val miss = assembler.missing(done.transferId)
-                if (miss.isEmpty()) {
-                    val file = assembler.onDone(done.transferId)
-                    if (file != null) {
-                        android.util.Log.i("MEDIA_RECV", "ГОТОВО: ${file.size}B собрано")
-                        // mediaKind знаем из INIT — упрощённо PHOTO (уточним при UI)
-                        onMediaComplete?.invoke(done.transferId, MediaKind.PHOTO, file)
-                        assembler.forget(done.transferId)
-                        ephKeys.remove(done.transferId)
-                    }
-                } else {
-                    android.util.Log.w("MEDIA_RECV", "DONE, но не хватает ${miss.size} чанков: $miss")
-                    // TODO под-кирпич добора: отправить CONTROL{missing} обратно
+                doneSeen.add(done.transferId)   // запомнить: финал разрешён, как только корзина полна
+                if (!tryFinalize(done.transferId)) {
+                    val miss = assembler.missing(done.transferId)
+                    android.util.Log.w("MEDIA_RECV", "DONE, ждём ${miss.size} опоздавших чанков: $miss")
+                    // опоздавший чанк придёт в CHUNK-ветку -> tryFinalize там дособерёт.
+                    // (Если чанк ПОТЕРЯН, а не опоздал — тут вступит будущий CONTROL{missing}-добор.)
                 }
             }
             else -> return false   // CALL_*/TEXT/CONTROL — не для этого контроллера сейчас
         }
+        return true
+    }
+
+    /** Собрать файл и отдать наверх, ЕСЛИ корзина полна. true = собрано (или уже
+     *  собрано ранее), false = ещё не хватает чанков. Идемпотентно: forget +
+     *  снятие doneSeen/ephKeys гарантируют единственный вызов onMediaComplete. */
+    private fun tryFinalize(id: TransferId): Boolean {
+        if (id !in doneSeen) return false            // DONE ещё не приходил — рано
+        if (assembler.missing(id).isNotEmpty()) return false   // не все чанки на месте
+        val file = assembler.onDone(id) ?: return false
+        android.util.Log.i("MEDIA_RECV", "ГОТОВО: ${file.size}B собрано (порядок-независимо)")
+        onMediaComplete?.invoke(id, MediaKind.PHOTO, file)
+        assembler.forget(id)
+        ephKeys.remove(id)
+        doneSeen.remove(id)
         return true
     }
 

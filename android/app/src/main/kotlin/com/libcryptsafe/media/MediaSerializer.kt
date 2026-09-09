@@ -35,6 +35,7 @@ class MediaSerializer(private val b64: Base64Codec) {
     /** ephKeyEncrypted — уже зашифрованный сессионным ключом (этажом выше). */
     fun serializeInit(init: MediaInit, ephKeyEncrypted: ByteArray): JSONObject =
         JSONObject().apply {
+            put("v", 1)                       // версия протокола — иначе выпадает из трубы v==1 на приёме
             put("type", ContentType.MEDIA_INIT.wire)
             put("transferId", b64.encode(init.transferId.bytes))
             put("mediaKind", init.mediaKind.id)
@@ -48,6 +49,7 @@ class MediaSerializer(private val b64: Base64Codec) {
     /** chunk.bytes — уже зашифрованный блоб из MediaCrypto. */
     fun serializeChunk(chunk: MediaChunk): JSONObject =
         JSONObject().apply {
+            put("v", 1)                       // версия протокола — иначе выпадает из трубы v==1 на приёме
             put("type", ContentType.MEDIA_CHUNK.wire)
             put("transferId", b64.encode(chunk.transferId.bytes))
             put("seq", chunk.seq)
@@ -56,12 +58,14 @@ class MediaSerializer(private val b64: Base64Codec) {
 
     fun serializeDone(done: MediaDone): JSONObject =
         JSONObject().apply {
+            put("v", 1)                       // версия протокола — иначе выпадает из трубы v==1 на приёме
             put("type", ContentType.MEDIA_DONE.wire)
             put("transferId", b64.encode(done.transferId.bytes))
         }
 
     fun serializeControl(ctrl: MediaControl): JSONObject =
         JSONObject().apply {
+            put("v", 1)                       // версия протокола — иначе выпадает из трубы v==1 на приёме
             put("type", ContentType.CONTROL.wire)
             put("transferId", b64.encode(ctrl.transferId.bytes))
             put("missing", org.json.JSONArray().apply { ctrl.missing.forEach { put(it) } })
