@@ -37,6 +37,15 @@ class NardiBoardView @JvmOverloads constructor(
     // ===== СЕТЕВОЙ РЕЖИМ (Кирпич 6) =====
     var isOnlineMode: Boolean = false             // сетевая партия?
     var myColor: PlayerType = PlayerType.WHITE    // мой цвет в сетевой партии
+    // Вариант партии. setter сразу переинициализирует доску правильной
+    // расстановкой (длинная 15-на-голове vs backgammon 2-5-3-5), чтобы обе
+    // стороны стартовали из корректной позиции ДО первого хода.
+    var variant: NardiVariant = NardiVariant.LONG
+        set(value) {
+            field = value
+            state = if (value == NardiVariant.SHORT) ShortNardiModel.initShortNardi() else initLongNardi()
+            invalidate()
+        }
     var isConnected: Boolean = true               // связь с relay жива? (по умолчанию да)
     // Callback: локальный игрок сделал легальный ход -> отправить в трубу
     var onMoveMade: ((from: Int, to: Int, die: Int) -> Unit)? = null

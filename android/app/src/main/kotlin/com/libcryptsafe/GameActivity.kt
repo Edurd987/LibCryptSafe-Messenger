@@ -29,6 +29,7 @@ class GameActivity : AppCompatActivity() {
             // ОНЛАЙН: настраиваем доску, но НЕ стартуем — ждём onOpeningDone (честный розыгрыш).
             board.isOnlineMode = true
             board.myColor = mgr.myColor
+            board.variant = mgr.variant   // расстановка long/short ДО первого хода; сеттер переинициализирует доску
             board.botEnabled = false
             board.onMoveMade = { from, to, die -> GameManager.INSTANCE?.sendMove(from, to, die) }
             board.onRollMade = { a, b -> GameManager.INSTANCE?.sendRoll(a, b) }

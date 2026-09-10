@@ -16,6 +16,7 @@ class GameManager(private val callback: GameCallback) {
     var gameId: String = ""; private set
     private var model: NardiGameState? = null
     var myColor: PlayerType = PlayerType.WHITE; private set   // мой цвет в сетевой партии
+    var variant: NardiVariant = NardiVariant.LONG; private set   // вариант партии (обоим игрокам одинаков)
     // Маяк 4: честный розыгрыш первого хода (commit-reveal)
     private enum class OpeningPhase { NONE, WAIT_PEER_COMMIT, WAIT_PEER_REVEAL, DONE }
     private var openingPhase = OpeningPhase.NONE
@@ -26,7 +27,7 @@ class GameManager(private val callback: GameCallback) {
     private var expectedSeq: Int = 0                          // жду от соперника этот seq
     private val eventBuffer = mutableListOf<Pair<Int, JSONObject>>()  // ранние события (seq > expected)
 
-    fun sendInvite(targetPeerId: String) {
+    fun sendInvite(targetPeerId: String, gameVariant: NardiVariant = NardiVariant.LONG) {
         if (state != State.IDLE) {
             callback.onGameSystemMessage("\u0443\u0436\u0435 \u0432 \u0438\u0433\u0440\u0435 \u0438\u043b\u0438 \u0436\u0434\u0451\u043c \u043e\u0442\u0432\u0435\u0442")
             return
@@ -34,9 +35,11 @@ class GameManager(private val callback: GameCallback) {
         peerId = targetPeerId
         gameId = java.util.UUID.randomUUID().toString()
         myColor = PlayerType.WHITE           // приглашающий играет белыми
+        variant = gameVariant                // A задаёт вариант сам
         state = State.INVITING
         val invite = JSONObject().apply {
             put("v", 1); put("type", "GAME_INVITE"); put("gameId", gameId); put("gameType", "nardi")
+            put("variant", gameVariant.name)  // едет сопернику, чтобы обе доски совпали
         }.toString()
         callback.onSendGameEvent(peerId, invite)
         callback.onGameSystemMessage("\u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435 \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e")
@@ -62,6 +65,8 @@ class GameManager(private val callback: GameCallback) {
         peerId = fromPeerId
         gameId = incomingGameId
         myColor = PlayerType.BLACK           // принимающий играет чёрными
+        variant = try { NardiVariant.valueOf(json.optString("variant", "LONG")) }
+                  catch (e: Exception) { NardiVariant.LONG }   // старый клиент без поля -> длинные
         state = State.INVITED
         callback.onInviteReceived(fromPeerId)
     }
@@ -85,7 +90,7 @@ class GameManager(private val callback: GameCallback) {
     }
 
     private fun startGame() {
-        model = initLongNardi()
+        model = if (variant == NardiVariant.SHORT) ShortNardiModel.initShortNardi() else initLongNardi()
         state = State.OPENING                 // сначала розыгрыш, НЕ ACTIVE
         callback.onGameStarted(peerId, gameId)
         startOpeningRoll()                    // оба игрока одновременно шлют commit

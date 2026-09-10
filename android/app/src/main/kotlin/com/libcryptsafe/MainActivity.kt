@@ -942,6 +942,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     private fun toast(msg: String) =
         android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
+    // Онлайн-приглашение в нарды выбранного варианта. Один контакт обязателен
+    // (currentPeerId). LONG/SHORT решает пункт меню; вариант едет в GAME_INVITE.
+    private fun inviteToNardi(variant: NardiVariant) {
+        if (currentPeerId != "UNKNOWN") gameManager.sendInvite(currentPeerId, variant)
+        else android.widget.Toast.makeText(this, "\u0441\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u044b\u0431\u0435\u0440\u0438 \u043a\u043e\u043d\u0442\u0430\u043a\u0442", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     private fun setupGames() {
         findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener {
             // Кирпич 5а: разделение режимов. Офлайн (локально/бот) НЕ трогает сеть;
@@ -950,14 +957,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 .setTitle("\u041d\u0430\u0440\u0434\u044b")
                 .setItems(arrayOf(
                     "\u041b\u043e\u043a\u0430\u043b\u044c\u043d\u043e (\u043e\u0444\u043b\u0430\u0439\u043d)",
-                    "\u041f\u0440\u0438\u0433\u043b\u0430\u0441\u0438\u0442\u044c \u0434\u0440\u0443\u0433\u0430 (\u043e\u043d\u043b\u0430\u0439\u043d)"
+                    "\u0414\u043b\u0438\u043d\u043d\u044b\u0435 \u2014 \u043f\u0440\u0438\u0433\u043b\u0430\u0441\u0438\u0442\u044c (\u043e\u043d\u043b\u0430\u0439\u043d)",
+                    "\u041a\u043e\u0440\u043e\u0442\u043a\u0438\u0435 \u2014 \u043f\u0440\u0438\u0433\u043b\u0430\u0441\u0438\u0442\u044c (\u043e\u043d\u043b\u0430\u0439\u043d)"
                 )) { _, which ->
                     when (which) {
                         0 -> startActivity(android.content.Intent(this, GameActivity::class.java))
-                        1 -> {
-                            if (currentPeerId != "UNKNOWN") gameManager.sendInvite(currentPeerId)
-                            else android.widget.Toast.makeText(this, "\u0441\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u044b\u0431\u0435\u0440\u0438 \u043a\u043e\u043d\u0442\u0430\u043a\u0442", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        1 -> inviteToNardi(NardiVariant.LONG)
+                        2 -> inviteToNardi(NardiVariant.SHORT)
                     }
                 }
                 .show()

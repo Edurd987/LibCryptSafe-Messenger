@@ -29,6 +29,10 @@ package com.libcryptsafe
  *   // TODO bear-off short: выброс с учётом дома (backgammon-специфика)
  *   // TODO MEDIUM: средние нарды — третий вариант, после коротких
  */
+/** Вариант нард: LONG (длинные, NardiModel) или SHORT (короткие/backgammon,
+ *  ShortNardiModel). Диспетчер выбирает движок по этому значению. */
+enum class NardiVariant { LONG, SHORT }
+
 object ShortNardiModel {
 
     /** Признак нереализованного под-кирпича — заглушки бросают это, чтобы
