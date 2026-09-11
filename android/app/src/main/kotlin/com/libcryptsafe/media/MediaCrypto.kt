@@ -51,6 +51,29 @@ class MediaCrypto(private val cipher: ChunkCipher) {
         return MediaChunk(plainChunk.transferId, plainChunk.seq, blob)
     }
 
+    // ===== ХРАНИЛИЩЕ (media-сейф). Тот же ChunkCipher, отдельный STORAGE-ключ. =====
+    // Транспортный эфемерный ключ и storage-ключ РАЗНЫЕ: передача расшифрована к
+    // моменту сохранения, сейф шифрует plain-байты ЗАНОВО своим ключом (два слоя,
+    // два атакующих: перехватчик канала vs вор диска). Формат блоба тот же
+    // [12 nonce][ct][16 tag] — переиспускаем encrypt/decrypt, второй AES не заводим.
+    // ПРЕДУПРЕЖДЕНИЕ будущему: encrypt/decrypt обязаны брать СЛУЧАЙНЫЙ nonce на
+    // каждый вызов (как сейчас). Детерминированный nonce = key+nonce reuse ->
+    // катастрофа и для транспорта, и для сейфа. Ловится nonce-uniqueness тестом.
+
+    /** 32 случайных байта — per-media STORAGE-ключ (кладётся в строку БД). */
+    fun newStorageKey(): ByteArray = newEphemeralKey()
+
+    /** Зашифровать ВЕСЬ файл storage-ключом для хранения в сейфе. */
+    fun encryptForStorage(storageKey: ByteArray, plain: ByteArray): ByteArray =
+        cipher.encrypt(storageKey, plain)
+            ?: throw SecurityException("media storage encrypt failed")
+
+    /** Расшифровать файл из сейфа. null -> подделка/неверный ключ (или ключ уже
+     *  затёрт при shred-удалении) -> SecurityException, не молчаливый мусор. */
+    fun decryptForStorage(storageKey: ByteArray, blob: ByteArray): ByteArray =
+        cipher.decrypt(storageKey, blob)
+            ?: throw SecurityException("media storage decrypt failed — tamper/wrong-or-shredded key")
+
     /** Расшифровать чанк. null от cipher = подделка/неверный ключ -> прерываем
      *  передачу SecurityException (tamper detection, а не молчаливый мусор). */
     fun decryptChunk(ephemeralKey: ByteArray, encChunk: MediaChunk): MediaChunk {

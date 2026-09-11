@@ -9,8 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
-    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class, ChannelEntity::class, PostEntity::class],
-    version = 6, exportSchema = false)
+    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class, ChannelEntity::class, PostEntity::class, MediaEntity::class],
+    version = 7, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun contactDao(): ContactDao
@@ -18,6 +18,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
     abstract fun channelDao(): ChannelDao
     abstract fun postDao(): PostDao
+    abstract fun mediaDao(): MediaDao
 
     companion object {
         @Volatile
@@ -78,6 +79,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Миграция v6->v7: таблица media (сейф сохранённых фото). Данные v6 целы
+        // (CREATE TABLE IF NOT EXISTS, старые таблицы не трогаем).
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS media (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "peerId TEXT, " +
+                    "storageKey BLOB NOT NULL, " +
+                    "encryptedBlob BLOB NOT NULL, " +
+                    "timestamp INTEGER NOT NULL, " +
+                    "mediaKind TEXT NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_media_peerId ON media(peerId)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 System.loadLibrary("sqlcipher")
@@ -99,7 +117,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 ).openHelperFactory(factory)
-                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)  // путь B: данные сохраняются
+                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)  // путь B: данные сохраняются
                       .build()
                 INSTANCE = instance
                 instance
