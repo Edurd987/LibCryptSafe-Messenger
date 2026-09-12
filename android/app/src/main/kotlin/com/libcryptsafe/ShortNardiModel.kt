@@ -349,4 +349,50 @@ object ShortNardiModel {
         if (player == PlayerType.WHITE) offW += 1 else offB += 1
         return state.copy(board = nb, bornOffWhite = offW, bornOffBlack = offB)
     }
+
+    // ===== ЗАВЕРШЕНИЕ ХОДА / ПАРТИИ (M1/M2) =====
+
+    /**
+     * Есть ли У ИГРОКА (state.turn) хоть один легальный ход при текущих костях.
+     * КОРОТКИЕ имеют ТРИ типа хода — проверяем все три, иначе ложное "ходов нет"
+     * сожжёт легальный ход:
+     *   1. ВХОД С БАРА (приоритетный): если фишка на баре — легален ТОЛЬКО вход,
+     *      обычные ходы заблокированы. Проверяем isLegalBarEntry по всем костям.
+     *      Если бар не пуст — это ЕДИНСТВЕННЫЙ возможный тип, остальные не смотрим.
+     *   2. ОБЫЧНЫЙ ход: любая своя фишка -> любой пункт, isLegalMoveShort.
+     *   3. ВЫБРОС: canBearOffShort с любой своей домашней фишки по любой кости.
+     */
+    fun hasAnyLegalMoveShort(state: NardiGameState): Boolean {
+        val dice = state.dice ?: return false
+        val player = state.turn
+        val myBar = if (player == PlayerType.WHITE) state.barWhite else state.barBlack
+
+        // 1. Фишка на баре -> ТОЛЬКО вход. Если хоть одна кость даёт вход -> есть ход.
+        if (myBar > 0) {
+            for (die in dice.distinct()) {
+                if (isLegalBarEntry(state, die)) return true
+            }
+            return false   // бар не пуст, но ни одной костью не войти -> ходов нет (burn)
+        }
+
+        // 2 + 3. Бар пуст: обычный ход ИЛИ выброс.
+        for (from in 0..23) {
+            val pt = state.board[from]
+            if (pt.count <= 0 || pt.player != player) continue
+            for (to in 0..23) {
+                if (isLegalMoveShort(state, from, to)) return true
+            }
+            for (die in dice.distinct()) {
+                if (canBearOffShort(state, from, die)) return true
+            }
+        }
+        return false
+    }
+
+    /** Победитель: кто выбросил все 15 шашек. null — партия продолжается. */
+    fun winnerShort(state: NardiGameState): PlayerType? = when {
+        state.bornOffWhite >= 15 -> PlayerType.WHITE
+        state.bornOffBlack >= 15 -> PlayerType.BLACK
+        else -> null
+    }
 }
