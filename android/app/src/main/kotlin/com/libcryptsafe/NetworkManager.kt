@@ -47,6 +47,7 @@ class NetworkManager(
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(ws: WebSocket, response: Response) {
+                android.util.Log.i("NET_DIAG", "onOpen: СОКЕТ ЖИВ (было попыток=$reconnectAttempts)")
                 isConnected = true
                 reconnectAttempts = 0
                 handler.onStatusChanged(true, reconnectAttempts)
@@ -180,6 +181,7 @@ class NetworkManager(
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 isConnected = false
                 handshakeDone = false
+                android.util.Log.w("NET_DIAG", "onFailure: ${t.javaClass.simpleName}: ${t.message} attempt=$reconnectAttempts")
                 handler.onStatusChanged(false, reconnectAttempts)
                 scheduleReconnect()
             }
@@ -187,6 +189,7 @@ class NetworkManager(
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                 isConnected = false
                 handshakeDone = false
+                android.util.Log.w("NET_DIAG", "onClosed: code=$code reason='$reason' intentional=$intentionallyClosed")
                 if (!intentionallyClosed) {
                     handler.onStatusChanged(false, reconnectAttempts)
                     scheduleReconnect()
@@ -218,6 +221,7 @@ class NetworkManager(
         if (isConnected) return
         reconnectHandler.removeCallbacksAndMessages(null)
         val delaySec = minOf(1 shl reconnectAttempts, 16)
+        android.util.Log.i("NET_DIAG", "scheduleReconnect: жду ${delaySec}s (attempt=$reconnectAttempts)")
         reconnectAttempts++
         reconnectHandler.postDelayed({
             if (!isConnected && !intentionallyClosed) connect()
