@@ -46,6 +46,70 @@ class NardiBoardView @JvmOverloads constructor(
             state = if (value == NardiVariant.SHORT) ShortNardiModel.initShortNardi() else initLongNardi()
             invalidate()
         }
+
+    // ===== ДИСПЕТЧЕРЫ ДВИЖКА (3b) — единственная точка выбора Short/Long. =====
+    // Принцип "одной истины": вызовы движка в applyRemoteMove/клике идут ЧЕРЕЗ эти
+    // обёртки, а не напрямую. Добавится вариант — правим здесь, а не ищем if по коду.
+    // Long-функции самодостаточны; Short требует иных сигнатур -> обёртка их согласует.
+    private val short get() = variant == NardiVariant.SHORT
+
+    // ОТЛАДКА burn: печатает доску + факт сжигания, чтобы сравнить A и B.
+    private fun engIsLegalMove(s: NardiGameState, f: Int, t: Int): Boolean =
+        if (short) ShortNardiModel.isLegalMoveShort(s, f, t) else isLegalMove(s, f, t)
+
+    private fun engApplyMove(s: NardiGameState, f: Int, t: Int): NardiGameState =
+        if (short) ShortNardiModel.applyMoveShort(s, f, t) else applyMove(s, f, t)
+
+    private fun engMoveDistance(mover: PlayerType, f: Int, t: Int): Int =
+        if (short) ShortNardiModel.moveDistanceShort(mover, f, t) else moveDistance(mover, f, t)
+
+    private fun engHasAnyMove(s: NardiGameState): Boolean =
+        if (short) ShortNardiModel.hasAnyLegalMoveShort(s) else hasAnyLegalMove(s)
+
+    private fun engWinner(s: NardiGameState): PlayerType? =
+        if (short) ShortNardiModel.winnerShort(s) else winner(s)
+
+    // ВЫБРОС — ключевая асимметрия. Long canBearOff/bearOff сами ищут кость внутри.
+    // Short canBearOffShort(s,from,DIE) проверяет ОДНУ кость -> обёртка сама
+    // перебирает dice тем же правилом, что Long внутри: точная need, иначе
+    // наименьший overshoot (dice.filter{>need}.min()). distToOffShort даёт need.
+    private fun engCanBearOff(s: NardiGameState, from: Int): Boolean {
+        if (!short) return canBearOff(s, from)
+        val dice = s.dice ?: return false
+        return dice.distinct().any { die -> ShortNardiModel.canBearOffShort(s, from, die) }
+    }
+
+    /** Выброс для текущего варианта. Long bearOff самодостаточен. Short: выбрать
+     *  кость (need или наименьший overshoot), снять фишку applyBearOffShort,
+     *  потратить эту кость consumeDie — воспроизводим то, что Long делает внутри. */
+    // Мой бар (кол-во своих фишек на баре). LONG всегда 0 (у длинных бара нет).
+    private fun myBarCount(s: NardiGameState): Int =
+        if (s.turn == PlayerType.WHITE) s.barWhite else s.barBlack
+
+    // Кость D, которой вход с бара попадает в пункт entryIdx (или null).
+    // WHITE вход board[24-D], BLACK board[D-1] (формулы 2b).
+    private fun dieForEntry(s: NardiGameState, entryIdx: Int): Int? {
+        val dice = s.dice ?: return null
+        for (d in dice.distinct()) {
+            if (short && ShortNardiModel.isLegalBarEntry(s, d) &&
+                ShortNardiModel.barEntryPoint(s.turn, d) == entryIdx) return d
+        }
+        return null
+    }
+
+    private fun engBearOff(s: NardiGameState, from: Int): NardiGameState {
+        if (!short) return bearOff(s, from)
+        val dice = s.dice ?: return s
+        val mover = s.board[from].player
+        val need = ShortNardiModel.distToOffShort(mover, from)
+        if (need <= 0) return s
+        // та же формула выбора кости, что у длинного bearOff:
+        val die = if (need in dice) need else dice.filter { it > need }.minOrNull() ?: return s
+        // безопасность: применяем только если этой костью выброс реально легален
+        if (!ShortNardiModel.canBearOffShort(s, from, die)) return s
+        val afterOff = ShortNardiModel.applyBearOffShort(s, from)
+        return consumeDie(afterOff, die)   // consumeDie общий (вариант-независим)
+    }
     var isConnected: Boolean = true               // связь с relay жива? (по умолчанию да)
     // Callback: локальный игрок сделал легальный ход -> отправить в трубу
     var onMoveMade: ((from: Int, to: Int, die: Int) -> Unit)? = null
@@ -55,22 +119,32 @@ class NardiBoardView @JvmOverloads constructor(
     // Входное окно: применить ход соперника, пришедший по сети.
     // Меняет state и перерисовывает — БЕЗ повторной отправки в трубу.
     fun applyRemoteMove(from: Int, to: Int, die: Int) {
-        if (to == -1) {                      // ВЫБРОС из дома (bearOff сам вычислит кость)
-            if (canBearOff(state, from)) {
-                state = bearOff(state, from)
-                if (winner(state) != null) { gameOver = true; showWinBanner() }
-                else if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+        if (from == -1) {                    // ВХОД С БАРА соперника (to=пункт входа, die=кость)
+            if (short && ShortNardiModel.isLegalBarEntry(state, die)) {
+                state = ShortNardiModel.applyBarEntry(state, die)
+                state = consumeDie(state, die)
+                if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
+                if (engWinner(state) != null) { gameOver = true; showWinBanner() }
+                invalidate()
+            } else android.util.Log.e("NARDI_NET", "нелегальный вход с бара соперника die=$die")
+            return
+        }
+        if (to == -1) {                      // ВЫБРОС из дома (движок сам вычислит кость)
+            if (engCanBearOff(state, from)) {
+                state = engBearOff(state, from)
+                if (engWinner(state) != null) { gameOver = true; showWinBanner() }
+                else if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
                 invalidate()
             } else {
                 android.util.Log.e("NARDI_NET", "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0432\u044b\u0431\u0440\u043e\u0441 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from")
             }
             return
         }
-        if (isLegalMove(state, from, to)) {
-            state = applyMove(state, from, to)
+        if (engIsLegalMove(state, from, to)) {
+            state = engApplyMove(state, from, to)
             state = consumeDie(state, die)   // тратим ПЕРЕДАННУЮ кость, не угадываем
-            if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
-            if (winner(state) != null) { gameOver = true; showWinBanner() }
+            if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
+            if (engWinner(state) != null) { gameOver = true; showWinBanner() }
             invalidate()
         } else {
             android.util.Log.e("NARDI_NET", "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0445\u043e\u0434 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from->$to")
@@ -91,7 +165,7 @@ class NardiBoardView @JvmOverloads constructor(
     // Входное окно: применить бросок соперника (кости), пришедший по сети.
     fun applyRemoteRoll(a: Int, b: Int) {
         state = applyRoll(state, a, b)
-        if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+        if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
         invalidate()
     }
     private val botHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -154,6 +228,12 @@ class NardiBoardView @JvmOverloads constructor(
 
     // Выбранный пункт (тап). null = ничего не выбрано. Пока только подсветка.
     private var selectedPoint: Int? = null
+    // Легальные цели выбранной фишки — подсветка, чтобы игрок видел куда идти
+    // (WHITE идёт к 0, BLACK к 23 — направление неочевидно; без подсветки юзер
+    // тыкал назад и думал «завис»). Диспетчер eng* -> работает для обоих вариантов.
+    private val moveTargetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#5500FF66"); style = Paint.Style.FILL
+    }
 
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#0A1410"); style = Paint.Style.FILL
@@ -271,7 +351,7 @@ class NardiBoardView @JvmOverloads constructor(
                         val d = state.dice
                         if (isOnlineMode && d != null && d.size >= 2) onRollMade?.invoke(d[0], d[1])
                         if (isOnlineMode && !gameOver) { winBanner = null; openingMyDie = 0; openingPeerDie = 0 }   // убрать баннер розыгрыша
-                        if (!hasAnyLegalMove(state)) state = burnTurn(state)
+                        if (!engHasAnyMove(state)) state = burnTurn(state)
                     }
                 }
                 invalidate()
@@ -280,6 +360,21 @@ class NardiBoardView @JvmOverloads constructor(
             }
             val clicked = pointAt(event.x, event.y)
             val from = selectedPoint
+            // ВХОД С БАРА (короткие): пока своя фишка на баре — легален ТОЛЬКО вход.
+            // Тап по пункту входа -> найти кость, дающую этот пункт -> applyBarEntry.
+            if (short && myBarCount(state) > 0) {
+                if (clicked != null) {
+                    val d = dieForEntry(state, clicked)
+                    if (d != null) {
+                        state = ShortNardiModel.applyBarEntry(state, d)
+                        state = consumeDie(state, d)
+                        if (isOnlineMode) onMoveMade?.invoke(-1, clicked, d)   // from=-1 маркер входа
+                        if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
+                    }
+                }
+                selectedPoint = null
+                invalidate(); maybeBotTurn(); return true
+            }
             when {
                 // А: мимо доски или по бару -> сброс выбора
                 clicked == null -> selectedPoint = null
@@ -290,28 +385,28 @@ class NardiBoardView @JvmOverloads constructor(
                 }
                 // В: второй этап (старт уже выбран)
                 clicked == from -> {                            // повторный тап
-                    val can = canBearOff(state, from)
+                    val can = engCanBearOff(state, from)
                     if (can) {
-                        state = bearOff(state, from)
-                        // Кирпич D: выброс -> в трубу (to=-1 маркер, die=-1 bearOff сам считает)
+                        state = engBearOff(state, from)
+                        // Кирпич D: выброс -> в трубу (to=-1 маркер, die=-1 движок сам считает)
                         if (isOnlineMode) onMoveMade?.invoke(from, -1, -1)
-                        if (winner(state) != null) {
+                        if (engWinner(state) != null) {
                             showWinBanner()
-                        } else if (state.dice != null && !hasAnyLegalMove(state)) {
+                        } else if (state.dice != null && !engHasAnyMove(state)) {
                             state = burnTurn(state)
                         }
                     }
                     selectedPoint = null
                 }
                 else -> {                                       // иначе -> попытка хода
-                    if (isLegalMove(state, from, clicked)) {
+                    if (engIsLegalMove(state, from, clicked)) {
                         val mover = state.board[from].player
-                        val dist = moveDistance(mover, from, clicked)  // дистанция по маршруту
-                        state = applyMove(state, from, clicked)
+                        val dist = engMoveDistance(mover, from, clicked)  // дистанция по маршруту
+                        state = engApplyMove(state, from, clicked)
                         state = consumeDie(state, dist)         // потратить использованный зар
                         // Кирпич 6.2: состоявшийся ход -> в трубу (только онлайн).
                         if (isOnlineMode) onMoveMade?.invoke(from, clicked, dist)
-                        if (state.dice != null && !hasAnyLegalMove(state)) state = burnTurn(state)
+                        if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
                     }
                     selectedPoint = null                        // легален или нет -> снять выбор
                 }
@@ -415,6 +510,25 @@ class NardiBoardView @JvmOverloads constructor(
             }
             pointPath.close()
             canvas.drawPath(pointPath, highlightPaint)
+
+            // Легальные ЦЕЛИ выбранной фишки: перебор всех пунктов + выброс.
+            for (t in 0 until 24) {
+                val legal = engIsLegalMove(state, sp, t)
+                if (!legal) continue
+                val vCol = if (t < 12) t else 23 - t
+                val sX = if (vCol < 6) vCol * pointWidth else vCol * pointWidth + barWidth
+                val cX = pointCenterX(t)
+                val eX = sX + pointWidth
+                pointPath.reset()
+                if (t < 12) { pointPath.moveTo(sX, h); pointPath.lineTo(eX, h); pointPath.lineTo(cX, h - pointHeight) }
+                else { pointPath.moveTo(sX, 0f); pointPath.lineTo(eX, 0f); pointPath.lineTo(cX, pointHeight) }
+                pointPath.close()
+                canvas.drawPath(pointPath, moveTargetPaint)
+            }
+            // выброс: если можно выбросить с sp — метим сам пункт (повторный тап = выброс)
+            if (engCanBearOff(state, sp)) {
+                canvas.drawPath(pointPath, moveTargetPaint)  // визуальный намёк (пункт уже подсвечен)
+            }
         }
 
         // Шашки из модели (1в-1): до 5 в стопке + число на верхней

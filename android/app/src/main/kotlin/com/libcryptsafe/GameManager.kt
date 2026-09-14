@@ -274,7 +274,7 @@ class GameManager(private val callback: GameCallback) {
             "GAME_MOVE" -> {
                 val from = json.optInt("from", -1); val to = json.optInt("to", -1)
                 val die = json.optInt("die", -1)
-                if (from >= 0 && (to >= 0 || to == -1)) { android.util.Log.i("GAME_SEQ", "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to"); callback.onRemoteMove(from, to, die) }
+                if ((from >= 0 || from == -1) && (to >= 0 || to == -1)) { android.util.Log.i("GAME_SEQ", "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to"); callback.onRemoteMove(from, to, die) }
             }
         }
     }
