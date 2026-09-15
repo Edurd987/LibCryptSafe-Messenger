@@ -112,13 +112,57 @@ abstract class AppDatabase : RoomDatabase() {
                 val passphrase = KeyStoreManager.getDatabasePassphrase(context)
                 val factory = SupportOpenHelperFactory(passphrase)
 
-                val instance = Room.databaseBuilder(
+                // BACKUP ПЕРЕД МИГРАЦИЕЙ (урок: сломанная миграция сменила ключ БД ->
+                // данные стали шумом). Если БД существует (значит возможна миграция) —
+                // копируем .db+wal+shm в .bak ДО build(). build() триггерит миграцию.
+                // Миграция упала -> восстанавливаем из .bak (лучше старые данные, чем
+                // пустая БД). Успех -> удаляем .bak (минимум следов на диске).
+                val dbFile = context.getDatabasePath(DB_NAME)
+                val walFile = context.getDatabasePath("$DB_NAME-wal")
+                val shmFile = context.getDatabasePath("$DB_NAME-shm")
+                val bakDb = context.getDatabasePath("$DB_NAME.bak")
+                val bakWal = context.getDatabasePath("$DB_NAME-wal.bak")
+                val bakShm = context.getDatabasePath("$DB_NAME-shm.bak")
+                val hadDb = dbFile.exists()   // на первом запуске БД нет — бэкапить нечего
+                if (hadDb) {
+                    try {
+                        dbFile.copyTo(bakDb, overwrite = true)
+                        if (walFile.exists()) walFile.copyTo(bakWal, overwrite = true)
+                        if (shmFile.exists()) shmFile.copyTo(bakShm, overwrite = true)
+                        android.util.Log.i("DB_BACKUP", "бэкап БД создан перед миграцией")
+                    } catch (e: Exception) {
+                        android.util.Log.w("DB_BACKUP", "не удалось создать бэкап: ${e.message}")
+                    }
+                }
+
+                fun buildDb() = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     DB_NAME
                 ).openHelperFactory(factory)
                       .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)  // путь B: данные сохраняются
                       .build()
+
+                val instance = try {
+                    val db = buildDb()
+                    db.openHelper.writableDatabase   // ФОРСИРУЕМ открытие -> миграция идёт ЗДЕСЬ, в try
+                    db
+                } catch (e: Exception) {
+                    android.util.Log.e("DB_BACKUP", "МИГРАЦИЯ УПАЛА: ${e.message} -> восстанавливаю из бэкапа")
+                    if (hadDb && bakDb.exists()) {
+                        // восстановить исходную БД из .bak (перезаписать повреждённую)
+                        bakDb.copyTo(dbFile, overwrite = true)
+                        if (bakWal.exists()) bakWal.copyTo(walFile, overwrite = true)
+                        if (bakShm.exists()) bakShm.copyTo(shmFile, overwrite = true)
+                        android.util.Log.w("DB_BACKUP", "БД восстановлена из бэкапа (миграция отменена)")
+                    }
+                    throw e   // пробрасываем: лучше явный краш «обновление не удалось», чем тихая пустая БД
+                }
+
+                // Миграция прошла успешно -> бэкап больше не нужен, удаляем (минимум следов)
+                if (hadDb) {
+                    bakDb.delete(); bakWal.delete(); bakShm.delete()
+                }
                 INSTANCE = instance
                 instance
             }
