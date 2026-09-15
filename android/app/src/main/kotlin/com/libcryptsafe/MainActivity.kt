@@ -454,6 +454,25 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // Каналы: создание через диалог (только имя), генерация пары, запись в БД
     private val channelRepo by lazy { ChannelRepository(this) }
     // МЕДИА (Этап 2): чистый контроллер, свои зависимости; НЕ тянет db/сеть.
+    /** S2: сохранить фото в сейф (private). Вынесен ОТДЕЛЬНЫМ методом, а не в
+     *  lazy-блоке mediaController — вызов mediaController изнутри его же
+     *  инициализации даёт recursive type-check. Здесь mediaController уже создан. */
+    private fun saveMediaToVault(bytes: ByteArray, peer: String?, btn: android.widget.TextView) {
+        val vault = mediaController.encryptForVault(bytes)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                db.mediaDao().insert(com.libcryptsafe.db.MediaEntity(
+                    peerId = peer, storageKey = vault.first,
+                    encryptedBlob = vault.second, mediaKind = "photo"))
+                runOnUiThread { btn.text = "\uD83D\uDD12 Сохранено"; btn.isClickable = false }
+                android.util.Log.i("MEDIA_VAULT", "photo saved to vault")
+            } catch (e: Exception) {
+                android.util.Log.e("MEDIA_VAULT", "save failed: ${e.message}")
+                runOnUiThread { toast("не удалось сохранить") }
+            }
+        }
+    }
+
     private val mediaController by lazy {
         com.libcryptsafe.media.MediaController(
             com.libcryptsafe.media.MediaCrypto(com.libcryptsafe.media.NativeChunkCipher()),
@@ -478,9 +497,24 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                             setPadding(8, 8, 8, 8)
                             setBackgroundResource(R.drawable.bubble_other)
                         }
-                        // OPSEC: без peerId/размера — только факт приёма.
+                        // S2: контейнер фото + кнопка "Сохранить в сейф". Дефолт —
+                        // ЭФЕМЕРНОСТЬ (байты в RAM, исчезнут при рестарте/смене ключей).
+                        // Нажал "Сохранить" -> шифруем storage-ключом -> MediaDao (private).
+                        val savedPeer = currentPeerId
+                        val box = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            addView(iv)
+                        }
+                        val saveBtn = android.widget.TextView(this@MainActivity).apply {
+                            text = "\uD83D\uDCBE Сохранить в сейф"
+                            textSize = 13f
+                            setPadding(8, 6, 8, 6)
+                            setTextColor(0xFF7CFFB0.toInt())
+                        }
+                        saveBtn.setOnClickListener { saveMediaToVault(bytes, savedPeer, saveBtn) }
+                        box.addView(saveBtn)
                         android.util.Log.d("MEDIA_RECV", "photo shown")
-                        addBubbleView(iv, isOwn = false)
+                        addBubbleView(box, isOwn = false)
                     } else {
                         // decode вернул null (битые/недособранные байты) — НЕ молча
                         // пустой прямоугольник (это выглядело бы как \"фото не пришло\"),

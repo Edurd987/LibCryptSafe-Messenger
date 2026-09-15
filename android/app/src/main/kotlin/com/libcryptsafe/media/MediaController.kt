@@ -42,6 +42,15 @@ class MediaController(
     // CHUNK-ветке (если последний чанк опоздал за DONE, гонка на 6мс из логов).
     private val doneSeen = HashSet<TransferId>()
 
+    /** ХРАНИЛИЩЕ (S2): зашифровать байты фото для сейфа СВОИМ storage-ключом.
+     *  Возвращает (storageKey, encryptedBlob) — вызывающая сторона (MainActivity)
+     *  кладёт их в MediaDao. Контроллер НЕ знает про БД (SRP): только крипто. */
+    fun encryptForVault(bytes: ByteArray): Pair<ByteArray, ByteArray> {
+        val key = crypto.newStorageKey()
+        val blob = crypto.encryptForStorage(key, bytes)
+        return Pair(key, blob)
+    }
+
     /** Сгенерировать эфемерный ключ для новой отправки (32B AES-256). Вызывающая
      *  сторона (MainActivity) передаёт его обратно в buildTransfer. */
     fun newEphemeralKeyForSend(): ByteArray = crypto.newEphemeralKey()
