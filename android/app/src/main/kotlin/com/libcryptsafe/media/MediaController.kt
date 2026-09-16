@@ -51,6 +51,12 @@ class MediaController(
         return Pair(key, blob)
     }
 
+    /** Расшифровать фото из сейфа обратно в байты (для показа). null если ключ
+     *  затёрт shred-удалением или данные повреждены — вызывающая сторона решает,
+     *  показывать заглушку. Симметрично encryptForVault, только крипто (SRP). */
+    fun decryptForVault(storageKey: ByteArray, blob: ByteArray): ByteArray? =
+        try { crypto.decryptForStorage(storageKey, blob) } catch (e: Exception) { null }
+
     /** Сгенерировать эфемерный ключ для новой отправки (32B AES-256). Вызывающая
      *  сторона (MainActivity) передаёт его обратно в buildTransfer. */
     fun newEphemeralKeyForSend(): ByteArray = crypto.newEphemeralKey()

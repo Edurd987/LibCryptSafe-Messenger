@@ -1568,6 +1568,24 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             for (m in history) {
                 addMessage(m.text, m.isOwn, persist = false, peerId = peer, status = m.status)
             }
+            // МИНИ-S3: показать сохранённые в сейф фото этого диалога (PRIVATE).
+            // Расшифровываем storage-ключом и рисуем ImageView в ленте. Эфемерные
+            // (несохранённые) сюда не попадают — их в БД нет (DEFAULT-состояние).
+            val savedMedia = withContext(Dispatchers.IO) { db.mediaDao().getByPeer(peer) }
+            for (mm in savedMedia) {
+                val plain = mediaController.decryptForVault(mm.storageKey, mm.encryptedBlob)
+                if (plain == null) continue   // ключ затёрт (shred) или порча -> пропускаем
+                val bmp = try { android.graphics.BitmapFactory.decodeByteArray(plain, 0, plain.size) }
+                          catch (e: Exception) { null } ?: continue
+                val iv = android.widget.ImageView(this@MainActivity).apply {
+                    setImageBitmap(bmp)
+                    adjustViewBounds = true
+                    maxWidth = (resources.displayMetrics.widthPixels * 0.8).toInt()
+                    setPadding(8, 8, 8, 8)
+                    setBackgroundResource(R.drawable.bubble_other)
+                }
+                addBubbleView(iv, isOwn = false)
+            }
         }
     }
 
