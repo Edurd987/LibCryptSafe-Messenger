@@ -166,7 +166,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         runOnUiThread {
             currentPeerId = peerId
             saveLastPeerId(peerId)
-            handleIncoming(content)
+            handleIncoming(content, peerId)
         }
     }
 
@@ -1216,7 +1216,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     if (ack.isNotEmpty()) { markDelivered(ack); return }
                     val n = j.optString("n", "")
                     if (n.isNotEmpty()) {
-                        handleIncoming(j.optString("t", ""))
+                        handleIncoming(j.optString("t", ""), peerId)
                         sendAck(peerId, n)
                         return
                     }
@@ -1225,7 +1225,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 // v == 0 -> не наш новый протокол: откат ниже
             }
         } catch (_: Exception) { /* fallback below */ }
-        handleIncoming(raw)
+        handleIncoming(raw, peerId)
     }
 
     private fun markDelivered(nonce: String) {
@@ -1315,25 +1315,30 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         androidx.core.app.NotificationManagerCompat.from(this).notify(1001, notif)
     }
 
-    private fun handleIncoming(raw: String) {
+    private fun handleIncoming(raw: String, senderPeerId: String) {
+        // Сохраняем по ИСТОЧНИКУ (senderPeerId), не по открытому чату. Раньше
+        // addMessage дефолтил peerId=currentPeerId -> сообщение от Боба, пришедшее
+        // при открытом чате Алисы, садилось под Алису и "пропадало" при рестарте.
+        val safePeer = if (senderPeerId.isNotEmpty() && senderPeerId != "UNKNOWN")
+            senderPeerId else currentPeerId
         val json = try {
             org.json.JSONObject(raw)
         } catch (e: Exception) {
             // не JSON => старый формат, чистый текст чата
-            addMessage(raw, isOwn = false, persist = true)
+            addMessage(raw, isOwn = false, persist = true, peerId = safePeer)
             notifyIncoming()
             return
         }
         // нет версии => старый формат (на всякий случай)
         if (!json.has("v")) {
-            addMessage(raw, isOwn = false, persist = true)
+            addMessage(raw, isOwn = false, persist = true, peerId = safePeer)
             return
         }
         // Безопасность: whitelist известных типов
         when (json.optString("type")) {
             "CHAT" -> {
                 val text = json.optString("text", "")
-                addMessage(text, isOwn = false, persist = true)
+                addMessage(text, isOwn = false, persist = true, peerId = safePeer)
                 notifyIncoming()
             }
             else -> {
