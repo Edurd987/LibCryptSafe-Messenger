@@ -423,10 +423,12 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         val contactsView = findViewById<android.widget.ScrollView>(R.id.container_contacts)
         val tabChannels = findViewById<TextView>(R.id.tab_channels)
         val channelsView = findViewById<android.widget.ScrollView>(R.id.container_channels)
+        val tabVault = findViewById<TextView>(R.id.tab_vault)
+        val vaultView = findViewById<android.widget.ScrollView>(R.id.container_vault)
 
 // Единый переключатель вкладок: показывает один контейнер, гасит остальные.
         // active — id активного таба. inputBar виден только на чате.
-        val tabs = listOf(tabChat, tabNet, tabMore, tabGames, tabContacts, tabChannels)
+        val tabs = listOf(tabChat, tabNet, tabMore, tabGames, tabContacts, tabChannels, tabVault)
         fun selectTab(active: TextView) {
             chatView.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
             netView.visibility   = if (active == tabNet)   android.view.View.VISIBLE else android.view.View.GONE
@@ -434,6 +436,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             gamesView.visibility = if (active == tabGames) android.view.View.VISIBLE else android.view.View.GONE
             contactsView.visibility = if (active == tabContacts) android.view.View.VISIBLE else android.view.View.GONE
             channelsView.visibility = if (active == tabChannels) android.view.View.VISIBLE else android.view.View.GONE
+            vaultView.visibility = if (active == tabVault) android.view.View.VISIBLE else android.view.View.GONE
             inputBar.visibility  = if (active == tabChat)  android.view.View.VISIBLE else android.view.View.GONE
             for (t in tabs) {
                 val on = t == active
@@ -442,6 +445,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             }
         }
 
+        tabVault.setOnClickListener { selectTab(tabVault); loadVault() }
         tabChat.setOnClickListener  { selectTab(tabChat) }
         tabNet.setOnClickListener   { selectTab(tabNet); updateNetworkPanel() }
         tabMore.setOnClickListener  { selectTab(tabMore) }
@@ -981,6 +985,42 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     private fun inviteToNardi(variant: NardiVariant) {
         if (currentPeerId != "UNKNOWN") gameManager.sendInvite(currentPeerId, variant)
         else android.widget.Toast.makeText(this, "\u0441\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u044b\u0431\u0435\u0440\u0438 \u043a\u043e\u043d\u0442\u0430\u043a\u0442", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun loadVault() {
+        val list = findViewById<LinearLayout>(R.id.list_vault)
+        lifecycleScope.launch {
+            val items = withContext(Dispatchers.IO) { db.mediaDao().getAll() }
+            list.removeAllViews()
+            if (items.isEmpty()) {
+                list.addView(TextView(this@MainActivity).apply {
+                    text = "Сейф пуст"; setTextColor(0xFF8A93A0.toInt()); textSize = 14f
+                }); return@launch
+            }
+            for (m in items) {
+                val plain = mediaController.decryptForVault(m.storageKey, m.encryptedBlob) ?: continue
+                val bmp = try { android.graphics.BitmapFactory.decodeByteArray(plain, 0, plain.size) }
+                          catch (e: Exception) { null } ?: continue
+                list.addView(android.widget.ImageView(this@MainActivity).apply {
+                    setImageBitmap(bmp); adjustViewBounds = true
+                    maxWidth = (resources.displayMetrics.widthPixels * 0.9).toInt(); setPadding(4, 4, 4, 4)
+                })
+                list.addView(TextView(this@MainActivity).apply {
+                    text = "Удалить из сейфа"
+                    setTextColor(0xFFFF8A8A.toInt()); textSize = 13f; setPadding(4, 6, 4, 14)
+                    setOnClickListener { shredMedia(m.id) }
+                })
+            }
+        }
+    }
+
+    private fun shredMedia(id: Long) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val zeros = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+            db.mediaDao().shredKey(id, zeros)
+            db.mediaDao().deleteRow(id)
+            withContext(Dispatchers.Main) { loadVault() }
+        }
     }
 
     private fun setupGames() {
