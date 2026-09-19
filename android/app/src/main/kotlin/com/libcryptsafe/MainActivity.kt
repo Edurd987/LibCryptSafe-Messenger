@@ -241,6 +241,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         requestNotificationPermission()
         startMessengerService()
         setContentView(R.layout.activity_main)
+        cleanupExports()   // S4-C: подмести расшифрованные экспорт-следы прошлых сессий
 
 
         containerMessages = findViewById(R.id.container_messages)
@@ -1006,12 +1007,95 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     maxWidth = (resources.displayMetrics.widthPixels * 0.9).toInt(); setPadding(4, 4, 4, 4)
                 })
                 list.addView(TextView(this@MainActivity).apply {
+                    text = "Отправить (покидает сейф)"
+                    setTextColor(0xFF7CFFB0.toInt()); textSize = 13f; setPadding(4, 6, 4, 6)
+                    setOnClickListener { confirmExport(m) }
+                })
+                list.addView(TextView(this@MainActivity).apply {
                     text = "Удалить из сейфа"
-                    setTextColor(0xFFFF8A8A.toInt()); textSize = 13f; setPadding(4, 6, 4, 14)
+                    setTextColor(0xFFFF8A8A.toInt()); textSize = 13f; setPadding(4, 4, 4, 14)
                     setOnClickListener { shredMedia(m.id) }
                 })
             }
         }
+    }
+
+    // S4: баннер информированного согласия перед выходом за периметр.
+    private fun confirmExport(m: com.libcryptsafe.db.MediaEntity) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("⚠️ Данные покидают защищённую среду")
+            .setMessage("Фото будет передано В ОТКРЫТОМ ВИДЕ (без ключей сейфа) через WhatsApp/Telegram или другое приложение. Дальше оно ВНЕ нашей защиты и может быть доступно третьим лицам. Продолжить?")
+            .setPositiveButton("Продолжить") { _, _ -> exportMedia(m) }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    // Расшифровать -> временный файл в cacheDir/export/ -> FileProvider -> ACTION_SEND.
+    // Временный файл = ПЛЕЙН-ТЕКСТ на диске (самый чувствительный след) -> затирается
+    // в onResume/onCreate через secureShredFile (перезапись + удаление, не просто delete).
+    private fun exportMedia(m: com.libcryptsafe.db.MediaEntity) {
+        val plain = mediaController.decryptForVault(m.storageKey, m.encryptedBlob)
+        if (plain == null) { toast("не удалось расшифровать"); return }
+        try {
+            val dir = java.io.File(cacheDir, "export").apply { mkdirs() }
+            val f = java.io.File(dir, "img_" + System.currentTimeMillis() + ".jpg")
+            f.writeBytes(plain)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "com.libcryptsafe.messenger.fileprovider", f)
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "image/jpeg"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(android.content.Intent.createChooser(send, "Отправить фото"))
+            android.util.Log.i("MEDIA_EXPORT", "photo exported out of vault")
+            // ОTLOЖ. ЗАТИРАНИЕ: получатель (WhatsApp/Telegram) читает файл асинхронно,
+            // мгновенно стереть нельзя (получит пустоту). Ждём 30с (чтения хватает
+            // за 1-2с, запас большой), потом shred. Файл живёт СЕКУНДЫ, не до возврата
+            // в приложение -> закрывает OPSEC-окно (plain-текст на диске недолго).
+            lifecycleScope.launch(Dispatchers.IO) {
+                kotlinx.coroutines.delay(30_000)
+                try { secureShredFile(f); android.util.Log.i("MEDIA_EXPORT", "timed shred ${f.name}") }
+                catch (e: Exception) { android.util.Log.e("MEDIA_EXPORT", "timed shred failed: ${e.message}") }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MEDIA_EXPORT", "export failed: ${e.message}")
+            toast("ошибка экспорта")
+        }
+    }
+
+    // Затереть ВСЕ временные экспорт-файлы (расшифрованные) shred'ом: перезапись
+    // случайными байтами -> удаление. delete() на flash не стирает -> форензик-след.
+    private fun cleanupExports() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val dir = java.io.File(cacheDir, "export")
+            val files = dir.listFiles()
+            android.util.Log.i("MEDIA_EXPORT", "cleanup: dir=${dir.absolutePath} exists=${dir.exists()} files=${files?.size ?: -1}")
+            if (files == null) return@launch
+            for (f in files) try {
+                secureShredFile(f)
+                android.util.Log.i("MEDIA_EXPORT", "shredded ${f.name}")
+            } catch (e: Exception) {
+                android.util.Log.e("MEDIA_EXPORT", "shred FAILED ${f.name}: ${e.message}")
+            }
+        }
+    }
+
+    private fun secureShredFile(f: java.io.File) {
+        if (!f.exists()) return
+        val len = f.length()
+        if (len > 0) {
+            val raf = java.io.RandomAccessFile(f, "rws")
+            val buf = ByteArray(4096); val rnd = java.security.SecureRandom()
+            var written = 0L
+            while (written < len) {
+                rnd.nextBytes(buf)
+                val chunk = minOf(buf.size.toLong(), len - written).toInt()
+                raf.write(buf, 0, chunk); written += chunk
+            }
+            raf.fd.sync(); raf.close()
+        }
+        f.delete()
     }
 
     private fun shredMedia(id: Long) {
@@ -1631,6 +1715,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
 
 
     override fun onResume() {
+        cleanupExports()   // S4-A: затереть временный файл после возврата (WhatsApp дочитал)
         super.onResume()
         isAppForeground = true
         intentionallyClosed = false
