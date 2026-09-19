@@ -608,7 +608,25 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         )
     }
 
+    // UI-3: выбор качества перед отправкой. High (~2МБ, ~90 чанков) входит в
+    // непроверенную зону доставки (backpressure/CONTROL-добор — отложены), потому
+    // предупреждаем. Настоящий оригинал (10МБ+) НЕ даём до backpressure-кирпича.
     private fun handleSelectedPhoto(uri: android.net.Uri) {
+        val presets = arrayOf("Сжато (~100КБ)", "Среднее (~500КБ)", "Качество (~2МБ)")
+        val limits = intArrayOf(100 * 1024, 500 * 1024, 2 * 1024 * 1024)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Качество фото")
+            .setItems(presets) { _, which ->
+                if (which == 2) {
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setMessage("Большое фото может не дойти на нестабильной сети. Отправить?")
+                        .setPositiveButton("Отправить") { _, _ -> doSendPhoto(uri, limits[2]) }
+                        .setNegativeButton("Отмена", null).show()
+                } else doSendPhoto(uri, limits[which])
+            }.show()
+    }
+
+    private fun doSendPhoto(uri: android.net.Uri, limitBytes: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bitmap = contentResolver.openInputStream(uri)?.use {
@@ -618,7 +636,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     runOnUiThread { android.widget.Toast.makeText(this@MainActivity, "не удалось прочитать фото", android.widget.Toast.LENGTH_SHORT).show() }
                     return@launch
                 }
-                val jpeg = compressToLimit(bitmap, 100 * 1024)
+                val jpeg = compressToLimit(bitmap, limitBytes)
                 // OPSEC: без размера/peerId в логе (метаданные связи).
                 android.util.Log.i("MEDIA_UI", "photo selected, sending")
                 runOnUiThread { addMessage("\uD83D\uDCF7 \u0444\u043e\u0442\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442\u0441\u044f (${jpeg.size/1024}KB)...", isOwn = true) }
