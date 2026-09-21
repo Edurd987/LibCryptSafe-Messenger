@@ -201,6 +201,9 @@ class NetworkManager(
     // Универсальная отправка готового JSON
     fun sendJson(json: String) { webSocket?.send(json) }
 
+    // Размер неотправленного буфера сокета (байты). Растёт, если шлём быстрее сети.
+    fun wsQueueSize(): Long = webSocket?.queueSize() ?: 0L
+
     // X3DH: положить текст в буфер и запросить prekeys (ответ придёт в onMessage)
     fun stashPending(targetId: String, plaintext: String) {
         pendingMessages[targetId] = plaintext

@@ -1549,9 +1549,21 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             // корутину на конверт -> гонка init/chunk/done, DONE обгонял чанки).
             // sendJson синхронный (OkHttp FIFO), поэтому порядок держится. delay(15)
             // -> страховка от переупорядочивания на relay при близких send().
+            // BACKPRESSURE: не шлём вслепую (delay было фиксированным -> буфер сокета
+            // рос до 690КБ на 20 чанках -> сокет рвался). Ждём, пока queueSize упадёт
+            // ниже порога, ПОТОМ шлём следующий. Подстраиваемся под скорость сети.
+            // BACKPRESSURE + ТЕМП: держим буфер МАЛЫМ (30КБ = меньше одного чанка ->
+            // ждём почти полной разгрузки перед каждым) + пауза 80мс после отправки,
+            // чтобы relay успевал форвардить и НЕ дропал (потеря 8/21 = relay захлёб).
+            val QUEUE_LIMIT = 30 * 1024L
             for ((i, env) in envelopes.withIndex()) {
+                var waited = 0
+                while ((networkManager?.wsQueueSize() ?: 0L) > QUEUE_LIMIT && waited < 400) {
+                    kotlinx.coroutines.delay(50); waited++
+                }
                 sendGameEnvelopeSync(targetId, env)
-                if (i < envelopes.size - 1) kotlinx.coroutines.delay(15)
+                kotlinx.coroutines.delay(80)   // дать relay форвотнуть, не заливать
+                android.util.Log.i("MEDIA_SEND", "chunk $i/${envelopes.size} sent, queue=${networkManager?.wsQueueSize() ?: -1}")
             }
             android.util.Log.i("MEDIA_SEND", "все конверты отправлены ПО ПОРЯДКУ -> $targetId")
         }
