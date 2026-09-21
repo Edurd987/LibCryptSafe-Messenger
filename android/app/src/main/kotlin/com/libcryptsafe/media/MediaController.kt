@@ -41,6 +41,9 @@ class MediaController(
     // Финализация срабатывает, когда корзина полна — в DONE-ветке ИЛИ позже в
     // CHUNK-ветке (если последний чанк опоздал за DONE, гонка на 6мс из логов).
     private val doneSeen = HashSet<TransferId>()
+    // kind из INIT (photo/voice/...) — чтобы отдать РЕАЛЬНЫЙ тип в onMediaComplete,
+    // а не хардкод PHOTO. Заполняется при INIT, читается при финализации.
+    private val kinds = HashMap<TransferId, MediaKind>()
 
     /** ХРАНИЛИЩЕ (S2): зашифровать байты фото для сейфа СВОИМ storage-ключом.
      *  Возвращает (storageKey, encryptedBlob) — вызывающая сторона (MainActivity)
@@ -136,6 +139,7 @@ class MediaController(
                 val (init, ephKeyPlain) = parsed   // ephKey открытый (конверт уже расшифрован сессионным)
                 assembler.onInit(init)
                 ephKeys[init.transferId] = ephKeyPlain
+                kinds[init.transferId] = init.mediaKind
                 android.util.Log.i("MEDIA_RECV", "INIT: ${init.totalChunks} чанков ждём")
             }
             ContentType.MEDIA_CHUNK -> {
@@ -178,10 +182,12 @@ class MediaController(
         if (assembler.missing(id).isNotEmpty()) return false   // не все чанки на месте
         val file = assembler.onDone(id) ?: return false
         android.util.Log.i("MEDIA_RECV", "ГОТОВО: ${file.size}B собрано (порядок-независимо)")
-        onMediaComplete?.invoke(id, MediaKind.PHOTO, file)
+        val kind = kinds[id] ?: MediaKind.PHOTO   // реальный тип из INIT (fallback PHOTO)
+        onMediaComplete?.invoke(id, kind, file)
         assembler.forget(id)
         ephKeys.remove(id)
         doneSeen.remove(id)
+        kinds.remove(id)
         return true
     }
 

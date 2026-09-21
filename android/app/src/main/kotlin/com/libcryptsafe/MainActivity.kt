@@ -388,6 +388,12 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         findViewById<android.widget.ImageButton>(R.id.btn_attach_photo).setOnClickListener {
             startPhotoPicker()
         }
+        findViewById<android.widget.ImageButton>(R.id.btn_voice).setOnClickListener {
+            if (voiceRecorder != null) stopVoiceRecording()   // идёт запись -> стоп
+            else if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+                     == android.content.pm.PackageManager.PERMISSION_GRANTED) startVoiceRecording()
+            else audioPermLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
         findViewById<Button>(R.id.btn_send).setOnClickListener {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -484,13 +490,17 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             com.libcryptsafe.media.MediaSerializer(com.libcryptsafe.media.AndroidBase64Codec())
         ).also { mc ->
             // Приём готового файла. Тело — в UI-2 (сохранить + показать как фото в чате).
-            mc.onMediaComplete = { _, _, bytes ->
+            mc.onMediaComplete = { _, kind, bytes ->
                 // UI-2: входящее фото -> Bitmap -> ImageView в ленте. IN-MEMORY:
                 // байты НЕ пишем на диск (форензик-след на изъятом телефоне —
                 // тот самый метаданный риск, от которого весь проект). Дисковая
                 // персистентность (шифровать/TTL/ручное сохранить) — отдельный
                 // OPSEC-кирпич позже, осознанным решением.
                 runOnUiThread {
+                    // VOICE -> плеер, PHOTO -> картинка (kind из INIT, под-шаг 1).
+                    if (kind == com.libcryptsafe.media.MediaKind.VOICE) {
+                        addVoiceBubble(bytes); return@runOnUiThread
+                    }
                     val bmp = try {
                         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     } catch (e: Exception) { null }
@@ -575,6 +585,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     }
 
     // Разрешение камеры (runtime, современный ActivityResultContract).
+    private var voiceRecorder: android.media.MediaRecorder? = null
+    private var voiceFile: java.io.File? = null
+    private var voiceStartMs: Long = 0L
+    private val audioPermLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) startVoiceRecording() else toast("нужно разрешение микрофона") }
+
     private val cameraPermLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -1122,6 +1139,110 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             db.mediaDao().shredKey(id, zeros)
             db.mediaDao().deleteRow(id)
             withContext(Dispatchers.Main) { loadVault() }
+        }
+    }
+
+    // VOICE (вариант C): тап -> запись, тап -> стоп -> предпросмотр -> отправить.
+    // Формат: OGG/OPUS моно 16kbps (~120КБ/мин, уровень среднего -> проходит надёжно).
+    private fun startVoiceRecording() {
+        try {
+            val f = java.io.File(cacheDir, "voice_" + System.currentTimeMillis() + ".ogg")
+            val rec = if (android.os.Build.VERSION.SDK_INT >= 31)
+                android.media.MediaRecorder(this) else @Suppress("DEPRECATION") android.media.MediaRecorder()
+            rec.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            rec.setOutputFormat(android.media.MediaRecorder.OutputFormat.OGG)
+            rec.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.OPUS)
+            rec.setAudioChannels(1)
+            rec.setAudioEncodingBitRate(16000)
+            rec.setAudioSamplingRate(16000)
+            rec.setMaxDuration(60_000)   // лимит 60с -> авто-стоп
+            rec.setOnInfoListener { _, what, _ ->
+                if (what == android.media.MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) stopVoiceRecording()
+            }
+            rec.setOutputFile(f.absolutePath)
+            rec.prepare(); rec.start()
+            voiceRecorder = rec; voiceFile = f; voiceStartMs = System.currentTimeMillis()
+            toast("Запись... (тап ещё раз = стоп)")
+            android.util.Log.i("VOICE", "recording started")
+        } catch (e: Exception) {
+            android.util.Log.e("VOICE", "start failed: ${e.message}"); toast("ошибка записи")
+            voiceRecorder = null; voiceFile = null
+        }
+    }
+
+    private fun stopVoiceRecording() {
+        val rec = voiceRecorder ?: return
+        val f = voiceFile
+        val durSec = ((System.currentTimeMillis() - voiceStartMs) / 1000).toInt()
+        try { rec.stop() } catch (_: Exception) {}
+        try { rec.release() } catch (_: Exception) {}
+        voiceRecorder = null
+        if (f == null || !f.exists() || f.length() == 0L || durSec < 1) {
+            toast("слишком коротко"); f?.let { lifecycleScope.launch(Dispatchers.IO) { secureShredFile(it) } }; return
+        }
+        // Предпросмотр (вариант C): отправить или отменить.
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Голосовое ($durSec сек)")
+            .setMessage("Отправить?")
+            .setPositiveButton("Отправить") { _, _ -> sendVoiceFile(f) }
+            .setNegativeButton("Отмена") { _, _ -> lifecycleScope.launch(Dispatchers.IO) { secureShredFile(f) } }
+            .setCancelable(false).show()
+    }
+
+    private fun sendVoiceFile(f: java.io.File) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val bytes = f.readBytes()
+                runOnUiThread { addMessage("голосовое отправляется (${bytes.size/1024}KB)...", isOwn = true) }
+                sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.VOICE, bytes)
+                android.util.Log.i("VOICE", "voice sent")
+            } catch (e: Exception) {
+                android.util.Log.e("VOICE", "send failed: ${e.message}")
+            } finally {
+                secureShredFile(f)   // затереть plain-звук после отправки
+            }
+        }
+    }
+
+    // VOICE-плеер: голос в ленте = кнопка "воспроизвести". Байты держим в замыкании
+    // (IN-MEMORY, как фото); воспроизведение пишет ВРЕМЕННЫЙ файл (MediaPlayer нужен
+    // файл/дескриптор), затираем его после плея (plain-звук на диске - как экспорт).
+    private fun addVoiceBubble(bytes: ByteArray) {
+        val btn = TextView(this).apply {
+            text = "▶ Голосовое сообщение"
+            textSize = 15f; setPadding(28, 18, 28, 18)
+            setBackgroundResource(R.drawable.bubble_other)
+            setTextColor(0xFFD5DCE4.toInt())
+            setOnClickListener { playVoice(bytes) }
+        }
+        addBubbleView(btn, isOwn = false)
+        android.util.Log.d("VOICE", "voice bubble shown")
+    }
+
+    private var voicePlayer: android.media.MediaPlayer? = null
+    private fun playVoice(bytes: ByteArray) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            var f: java.io.File? = null
+            try {
+                f = java.io.File(cacheDir, "play_" + System.currentTimeMillis() + ".ogg")
+                f.writeBytes(bytes)
+                voicePlayer?.release()
+                val mp = android.media.MediaPlayer()
+                mp.setDataSource(f.absolutePath)
+                mp.prepare()
+                val tmp = f
+                mp.setOnCompletionListener {
+                    it.release(); voicePlayer = null
+                    lifecycleScope.launch(Dispatchers.IO) { secureShredFile(tmp) }
+                }
+                mp.start()
+                voicePlayer = mp
+                android.util.Log.i("VOICE", "playing")
+            } catch (e: Exception) {
+                android.util.Log.e("VOICE", "play failed: ${e.message}")
+                f?.let { secureShredFile(it) }
+                runOnUiThread { toast("не удалось воспроизвести") }
+            }
         }
     }
 
