@@ -1,5 +1,7 @@
 package com.libcryptsafe
 
+import com.libcryptsafe.util.SafeLogger
+
 import android.content.Context
 import com.libcryptsafe.db.AppDatabase
 import com.libcryptsafe.db.KeyStoreManager
@@ -39,7 +41,7 @@ object PrekeyManager {
                 privateKey = pair[1], publicKey = pair[0],
                 signature = null, timestamp = System.currentTimeMillis()
             ))
-            android.util.Log.d("PREKEY_MGR", "IK_DH создан")  // факт, БЕЗ ключа
+            SafeLogger.d("PREKEY_MGR", "IK_DH создан")  // факт, БЕЗ ключа
         }
 
         // 1. SPK — создаём, только если его нет
@@ -57,7 +59,7 @@ object PrekeyManager {
                 privateKey = spkPriv, publicKey = spkPub,
                 signature = signature, timestamp = ts
             ))
-            android.util.Log.d("PREKEY_MGR", "SPK создан и подписан")
+            SafeLogger.d("PREKEY_MGR", "SPK создан и подписан")
         }
 
         // 2. OPK — дополняем пачку до OPK_BATCH, если не хватает
@@ -87,7 +89,7 @@ object PrekeyManager {
             }
             dao.insertAll(batch)   // атомарная пачка
             // лог: ТОЛЬКО числа, НИКОГДА не ключи (logcat читаем извне)
-            android.util.Log.d("PREKEY_MGR", "OPK дополнено: +$generated (было $haveOpk)")
+            SafeLogger.d("PREKEY_MGR", "OPK дополнено: +$generated (было $haveOpk)")
         }
     }
 

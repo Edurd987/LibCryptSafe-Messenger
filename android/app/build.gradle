@@ -8,6 +8,9 @@ android {
     namespace 'com.libcryptsafe'
     compileSdk 34
 
+    buildFeatures {
+        buildConfig true   // AGP генерит BuildConfig.DEBUG (true в debug, false в release)
+    }
     defaultConfig {
         applicationId "com.libcryptsafe.messenger"
         minSdk 26
@@ -34,8 +37,12 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            // ЭТАП A: minify OFF (проверяем логику без обфускации). Подпись — DEBUG-ключом
+            // ТОЛЬКО ДЛЯ ТЕСТА (release ставится на телефон). Боевой keystore для Google
+            // Play — отдельный pre-release шаг с надёжным хранением/бэкапом ключа.
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             debuggable true

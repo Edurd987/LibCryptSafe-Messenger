@@ -1,5 +1,7 @@
 package com.libcryptsafe
 
+import com.libcryptsafe.util.SafeLogger
+
 import android.content.Context
 import android.util.Base64
 import com.libcryptsafe.db.AppDatabase
@@ -42,7 +44,7 @@ object SessionManager {
         val signObject = PrekeyManager.buildSpkSignObject(spkPub, spkKeyId)
         val sigValid = CryptoManager.verifySignature(ikSign, signObject, spkSig)
         if (!sigValid) {
-            android.util.Log.e("SESSION", "подпись SPK не сошлась — отказ (возможна подмена)")
+            SafeLogger.e("SESSION", "подпись SPK не сошлась — отказ (возможна подмена)")
             return null
         }
 
@@ -108,7 +110,7 @@ object SessionManager {
 
         // расшифровываем (GCM-tag проверяется внутри -> null при подделке)
         val plain = CryptoManager.decryptWithKey(kEnc, cipher) ?: run {
-            android.util.Log.e("SESSION", "расшифровка не удалась (tag/ключ)")
+            SafeLogger.e("SESSION", "расшифровка не удалась (tag/ключ)")
             return DecryptedMessage(null, "")
         }
 
@@ -117,7 +119,7 @@ object SessionManager {
         // сохраняем сессию под peerId (= stableId Алисы из её ik_sign)
         AppDatabase.getInstance(context).sessionDao().upsert(
             SessionEntity(peerId, kEnc, r[1], System.currentTimeMillis()))
-        android.util.Log.d("SESSION", "сессия установлена с $peerId")
+        SafeLogger.d("SESSION", "сессия установлена с $peerId")
 
         return DecryptedMessage(plain, peerId)
     }
@@ -131,7 +133,7 @@ object SessionManager {
             ?: return null
         val cipherBytes = CryptoManager.encryptWithKey(session.kEnc, plaintext.toByteArray(Charsets.UTF_8))
             ?: return null
-        android.util.Log.d("SESSION", "encryptMessage -> $peerId (na Kenc)")
+        SafeLogger.d("SESSION", "encryptMessage -> $peerId (na Kenc)")
         return JSONObject().apply {
             put("type", "CHAT_ENCRYPTED")
             put("cipher", b64(cipherBytes))
@@ -158,7 +160,7 @@ object SessionManager {
         for (s in sessions) {
             val plain = CryptoManager.decryptWithKey(s.kEnc, cipher)
             if (plain != null) {
-                android.util.Log.d("SESSION", "decryptAnySession -> ${s.peerId}")
+                SafeLogger.d("SESSION", "decryptAnySession -> ${s.peerId}")
                 return DecryptedMessage(plain, s.peerId)
             }
         }

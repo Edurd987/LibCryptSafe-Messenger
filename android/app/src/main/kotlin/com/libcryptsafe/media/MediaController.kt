@@ -1,5 +1,7 @@
 package com.libcryptsafe.media
 
+import com.libcryptsafe.util.SafeLogger
+
 import org.json.JSONObject
 import java.security.MessageDigest
 
@@ -116,7 +118,7 @@ class MediaController(
 
         // DONE
         out.add(serializer.serializeDone(MediaDone(transferId)).toString())
-        android.util.Log.i("MEDIA_SEND", "transfer готов: $totalChunks чанков, ${fileBytes.size}B")
+        SafeLogger.i("MEDIA_SEND", "transfer готов: $totalChunks чанков, ${fileBytes.size}B")
         return out
     }
 
@@ -140,21 +142,21 @@ class MediaController(
                 assembler.onInit(init)
                 ephKeys[init.transferId] = ephKeyPlain
                 kinds[init.transferId] = init.mediaKind
-                android.util.Log.i("MEDIA_RECV", "INIT: ${init.totalChunks} чанков ждём")
+                SafeLogger.i("MEDIA_RECV", "INIT: ${init.totalChunks} чанков ждём")
             }
             ContentType.MEDIA_CHUNK -> {
                 val enc = serializer.parseChunk(json) ?: return true
                 val key = ephKeys[enc.transferId] ?: run {
-                    android.util.Log.w("MEDIA_RECV", "нет ephKey (INIT не пришёл?) — чанк пропущен")
+                    SafeLogger.w("MEDIA_RECV", "нет ephKey (INIT не пришёл?) — чанк пропущен")
                     return true
                 }
                 val plain = try { crypto.decryptChunk(key, enc) }
                     catch (e: SecurityException) {
-                        android.util.Log.e("MEDIA_RECV", "чанк не расшифрован (tamper?): ${e.message}")
+                        SafeLogger.e("MEDIA_RECV", "чанк не расшифрован (tamper?): ${e.message}")
                         return true
                     }
                 assembler.onChunk(plain)
-                android.util.Log.d("MEDIA_RECV", "CHUNK seq=${plain.seq} принят")
+                SafeLogger.d("MEDIA_RECV", "CHUNK seq=${plain.seq} принят")
                 // Если DONE уже приходил и это был последний недостающий чанк —
                 // собрать здесь (DONE-ветка тогда «не хватало», но теперь полно).
                 if (enc.transferId in doneSeen) tryFinalize(enc.transferId)
@@ -164,7 +166,7 @@ class MediaController(
                 doneSeen.add(done.transferId)   // запомнить: финал разрешён, как только корзина полна
                 if (!tryFinalize(done.transferId)) {
                     val miss = assembler.missing(done.transferId)
-                    android.util.Log.w("MEDIA_RECV", "DONE, ждём ${miss.size} опоздавших чанков: $miss")
+                    SafeLogger.w("MEDIA_RECV", "DONE, ждём ${miss.size} опоздавших чанков: $miss")
                     // опоздавший чанк придёт в CHUNK-ветку -> tryFinalize там дособерёт.
                     // (Если чанк ПОТЕРЯН, а не опоздал — тут вступит будущий CONTROL{missing}-добор.)
                 }
@@ -181,7 +183,7 @@ class MediaController(
         if (id !in doneSeen) return false            // DONE ещё не приходил — рано
         if (assembler.missing(id).isNotEmpty()) return false   // не все чанки на месте
         val file = assembler.onDone(id) ?: return false
-        android.util.Log.i("MEDIA_RECV", "ГОТОВО: ${file.size}B собрано (порядок-независимо)")
+        SafeLogger.i("MEDIA_RECV", "ГОТОВО: ${file.size}B собрано (порядок-независимо)")
         val kind = kinds[id] ?: MediaKind.PHOTO   // реальный тип из INIT (fallback PHOTO)
         onMediaComplete?.invoke(id, kind, file)
         assembler.forget(id)

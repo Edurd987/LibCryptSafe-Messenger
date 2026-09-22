@@ -1,5 +1,7 @@
 package com.libcryptsafe
 
+import com.libcryptsafe.util.SafeLogger
+
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -47,7 +49,7 @@ class NetworkManager(
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(ws: WebSocket, response: Response) {
-                android.util.Log.i("NET_DIAG", "onOpen: СОКЕТ ЖИВ (было попыток=$reconnectAttempts)")
+                SafeLogger.i("NET_DIAG", "onOpen: СОКЕТ ЖИВ (было попыток=$reconnectAttempts)")
                 isConnected = true
                 reconnectAttempts = 0
                 handler.onStatusChanged(true, reconnectAttempts)
@@ -65,9 +67,9 @@ class NetworkManager(
                     try {
                         val uploadJson = PrekeyManager.buildUploadJson(appContext, myStableId)
                         ws.send(uploadJson)
-                        android.util.Log.d("PREKEY_MGR", "связка prekeys опубликована на relay")
+                        SafeLogger.d("PREKEY_MGR", "связка prekeys опубликована на relay")
                     } catch (e: Exception) {
-                        android.util.Log.e("PREKEY_MGR", "публикация: ${e.message}")
+                        SafeLogger.e("PREKEY_MGR", "публикация: ${e.message}")
                     }
                 }
             }
@@ -112,10 +114,10 @@ class NetworkManager(
                                     put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                                 }.toString()
                                 webSocket?.send(envelope)
-                                android.util.Log.d("X3DH_SEND", "первое сообщение отправлено -> $targetId")
+                                SafeLogger.d("X3DH_SEND", "первое сообщение отправлено -> $targetId")
                                 handler.onSystemMessage("✓ отправлено (X3DH) $targetId")
                             } catch (e: Exception) {
-                                android.util.Log.e("X3DH_SEND", "ошибка: ${e.message}")
+                                SafeLogger.e("X3DH_SEND", "ошибка: ${e.message}")
                             }
                         }
                         return
@@ -181,7 +183,7 @@ class NetworkManager(
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 isConnected = false
                 handshakeDone = false
-                android.util.Log.w("NET_DIAG", "onFailure: ${t.javaClass.simpleName}: ${t.message} attempt=$reconnectAttempts")
+                SafeLogger.w("NET_DIAG", "onFailure: ${t.javaClass.simpleName}: ${t.message} attempt=$reconnectAttempts")
                 handler.onStatusChanged(false, reconnectAttempts)
                 scheduleReconnect()
             }
@@ -189,7 +191,7 @@ class NetworkManager(
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                 isConnected = false
                 handshakeDone = false
-                android.util.Log.w("NET_DIAG", "onClosed: code=$code reason='$reason' intentional=$intentionallyClosed")
+                SafeLogger.w("NET_DIAG", "onClosed: code=$code reason='$reason' intentional=$intentionallyClosed")
                 if (!intentionallyClosed) {
                     handler.onStatusChanged(false, reconnectAttempts)
                     scheduleReconnect()
@@ -224,7 +226,7 @@ class NetworkManager(
         if (isConnected) return
         reconnectHandler.removeCallbacksAndMessages(null)
         val delaySec = minOf(1 shl reconnectAttempts, 16)
-        android.util.Log.i("NET_DIAG", "scheduleReconnect: жду ${delaySec}s (attempt=$reconnectAttempts)")
+        SafeLogger.i("NET_DIAG", "scheduleReconnect: жду ${delaySec}s (attempt=$reconnectAttempts)")
         reconnectAttempts++
         reconnectHandler.postDelayed({
             if (!isConnected && !intentionallyClosed) connect()

@@ -1,5 +1,7 @@
 package com.libcryptsafe
 
+import com.libcryptsafe.util.SafeLogger
+
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -54,7 +56,7 @@ class GameManager(private val callback: GameCallback) {
             "GAME_END" -> onEndReceived(fromPeerId, json)
             "GAME_MOVE" -> onMoveReceived(fromPeerId, json)
             "GAME_ROLL" -> onRollReceived(fromPeerId, json)
-            else -> android.util.Log.w("GAME_MGR", "unknown game type: ${json.optString("type")}")
+            else -> SafeLogger.w("GAME_MGR", "unknown game type: ${json.optString("type")}")
         }
     }
 
@@ -108,7 +110,7 @@ class GameManager(private val callback: GameCallback) {
         }.toString()
         callback.onSendGameEvent(peerId, commit)
         openingPhase = OpeningPhase.WAIT_PEER_COMMIT
-        android.util.Log.i("GAME_SEQ", "OPEN -> COMMIT hash=${hash.take(12)}...")
+        SafeLogger.i("GAME_SEQ", "OPEN -> COMMIT hash=${hash.take(12)}...")
     }
 
     // Приём commit соперника: сохраняю его хэш (кирпич 2 пошлёт reveal).
@@ -119,7 +121,7 @@ class GameManager(private val callback: GameCallback) {
         val owner = json.optString("owner", "")
         if (owner == myColor.name) return     // своё эхо (защита)
         peerCommitHash = json.optString("hash", "")
-        android.util.Log.i("GAME_SEQ", "OPEN <- COMMIT peer hash=${peerCommitHash.take(12)}...")
+        SafeLogger.i("GAME_SEQ", "OPEN <- COMMIT peer hash=${peerCommitHash.take(12)}...")
         sendOpenReveal()
     }
 
@@ -131,7 +133,7 @@ class GameManager(private val callback: GameCallback) {
             put("owner", myColor.name); put("die", myOpeningDie); put("salt", myOpeningSalt)
         }.toString()
         callback.onSendGameEvent(peerId, reveal)
-        android.util.Log.i("GAME_SEQ", "OPEN -> REVEAL die=$myOpeningDie")
+        SafeLogger.i("GAME_SEQ", "OPEN -> REVEAL die=$myOpeningDie")
     }
 
     private fun onOpenRevealReceived(fromPeerId: String, json: JSONObject) {
@@ -142,7 +144,7 @@ class GameManager(private val callback: GameCallback) {
         if (owner == myColor.name) return                    // своё эхо
         // ЗАЩИТА: reveal без предшествующего commit -> отвергаем (атака "проскочить commit")
         if (peerCommitHash.isEmpty()) {
-            android.util.Log.e("NARDI_NET", "OPEN reveal БЕЗ commit — отвергнут")
+            SafeLogger.e("NARDI_NET", "OPEN reveal БЕЗ commit — отвергнут")
             return
         }
         val peerDie = json.optInt("die", 0)
@@ -151,17 +153,17 @@ class GameManager(private val callback: GameCallback) {
         // ВЕРИФИКАЦИЯ: хэш раскрытого совпадает с commit соперника?
         val check = sha256(byteArrayOf(peerDie.toByte()) + peerSalt.hexToBytes())
         if (check != peerCommitHash) {
-            android.util.Log.e("NARDI_NET", "OPEN ПОДТАСОВКА! hash mismatch — соперник сжульничал")
+            SafeLogger.e("NARDI_NET", "OPEN ПОДТАСОВКА! hash mismatch — соперник сжульничал")
             endGame()                                        // честность нарушена -> стоп
             return
         }
-        android.util.Log.i("GAME_SEQ", "OPEN <- REVEAL peer die=$peerDie (проверен)")
+        SafeLogger.i("GAME_SEQ", "OPEN <- REVEAL peer die=$peerDie (проверен)")
         // Оба честны. Сравниваем кости.
         when {
             myOpeningDie > peerDie -> finishOpening(myColor, myOpeningDie, peerDie)
             myOpeningDie < peerDie -> finishOpening(if (myColor == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE, myOpeningDie, peerDie)
             else -> {                                        // ничья -> переброс
-                android.util.Log.i("GAME_SEQ", "OPEN ничья $myOpeningDie=$peerDie -> переброс")
+                SafeLogger.i("GAME_SEQ", "OPEN ничья $myOpeningDie=$peerDie -> переброс")
                 peerCommitHash = ""
                 startOpeningRoll()                           // свежие кость+соль
             }
@@ -172,7 +174,7 @@ class GameManager(private val callback: GameCallback) {
     private fun finishOpening(first: PlayerType, myDie: Int, peerDie: Int) {
         openingPhase = OpeningPhase.DONE
         state = State.ACTIVE
-        android.util.Log.i("GAME_SEQ", "OPEN DONE -> первый ход: $first (мой цвет $myColor)")
+        SafeLogger.i("GAME_SEQ", "OPEN DONE -> первый ход: $first (мой цвет $myColor)")
         callback.onOpeningDone(first, myDie, peerDie)
     }
 
@@ -211,7 +213,7 @@ class GameManager(private val callback: GameCallback) {
             put("owner", myColor.name); put("seq", s); put("a", a); put("b", b)
         }.toString()
         callback.onSendGameEvent(peerId, roll)
-        android.util.Log.i("GAME_SEQ", "-> ROLL seq=$s $a,$b")
+        SafeLogger.i("GAME_SEQ", "-> ROLL seq=$s $a,$b")
     }
 
     private fun onRollReceived(fromPeerId: String, json: JSONObject) {
@@ -229,7 +231,7 @@ class GameManager(private val callback: GameCallback) {
             put("owner", myColor.name); put("seq", s); put("die", die); put("from", from); put("to", to)
         }.toString()
         callback.onSendGameEvent(peerId, move)
-        android.util.Log.i("GAME_SEQ", "-> MOVE seq=$s die=$die $from->$to")
+        SafeLogger.i("GAME_SEQ", "-> MOVE seq=$s die=$die $from->$to")
     }
 
     // Входящий ход соперника: применяем к доске, которую видит игрок (board = истина).
@@ -245,16 +247,16 @@ class GameManager(private val callback: GameCallback) {
         // Owner-фильтр: событие валидно только из потока СОПЕРНИКА.
         // Своё (эхо/ошибка) и любую третью сторону — игнорируем. Изоляция namespace.
         val owner = json.optString("owner", "")
-        if (owner == myColor.name) { android.util.Log.i("GAME_SEQ", "<- OWN owner=$owner игнор"); return }
+        if (owner == myColor.name) { SafeLogger.i("GAME_SEQ", "<- OWN owner=$owner игнор"); return }
         val peerColor = if (myColor == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
-        if (owner != peerColor.name) { android.util.Log.i("GAME_SEQ", "<- ALIEN owner=$owner игнор"); return }
+        if (owner != peerColor.name) { SafeLogger.i("GAME_SEQ", "<- ALIEN owner=$owner игнор"); return }
         val seq = json.optInt("seq", -1)
         if (seq < 0) return
         when {
-            seq < expectedSeq -> android.util.Log.i("GAME_SEQ", "<- DUP seq=$seq (ждём $expectedSeq) игнор")
+            seq < expectedSeq -> SafeLogger.i("GAME_SEQ", "<- DUP seq=$seq (ждём $expectedSeq) игнор")
             seq > expectedSeq -> {
                 eventBuffer.add(seq to json)
-                android.util.Log.i("GAME_SEQ", "<- BUFFER seq=$seq (ждём $expectedSeq)")
+                SafeLogger.i("GAME_SEQ", "<- BUFFER seq=$seq (ждём $expectedSeq)")
             }
             else -> {
                 applyEvent(json)
@@ -269,12 +271,12 @@ class GameManager(private val callback: GameCallback) {
         when (json.optString("type", "")) {
             "GAME_ROLL" -> {
                 val a = json.optInt("a", 0); val b = json.optInt("b", 0)
-                if (a >= 1 && b >= 1) { android.util.Log.i("GAME_SEQ", "<- ROLL seq=${json.optInt("seq")} $a,$b"); callback.onRemoteRoll(a, b) }
+                if (a >= 1 && b >= 1) { SafeLogger.i("GAME_SEQ", "<- ROLL seq=${json.optInt("seq")} $a,$b"); callback.onRemoteRoll(a, b) }
             }
             "GAME_MOVE" -> {
                 val from = json.optInt("from", -1); val to = json.optInt("to", -1)
                 val die = json.optInt("die", -1)
-                if ((from >= 0 || from == -1) && (to >= 0 || to == -1)) { android.util.Log.i("GAME_SEQ", "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to"); callback.onRemoteMove(from, to, die) }
+                if ((from >= 0 || from == -1) && (to >= 0 || to == -1)) { SafeLogger.i("GAME_SEQ", "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to"); callback.onRemoteMove(from, to, die) }
             }
         }
     }
@@ -285,7 +287,7 @@ class GameManager(private val callback: GameCallback) {
             val idx = eventBuffer.indexOfFirst { it.first == expectedSeq }
             if (idx < 0) break
             val (_, j) = eventBuffer.removeAt(idx)
-            android.util.Log.i("GAME_SEQ", "<- DRAIN seq=$expectedSeq")
+            SafeLogger.i("GAME_SEQ", "<- DRAIN seq=$expectedSeq")
             applyEvent(j)
             expectedSeq++
         }

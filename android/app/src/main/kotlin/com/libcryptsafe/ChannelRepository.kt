@@ -1,5 +1,7 @@
 package com.libcryptsafe
 
+import com.libcryptsafe.util.SafeLogger
+
 import android.content.Context
 import com.libcryptsafe.db.AppDatabase
 import com.libcryptsafe.db.ChannelEntity
@@ -48,7 +50,7 @@ class ChannelRepository(context: Context) {
             post.channelId, post.seq, post.timestamp, post.content, post.signature
         )
         if (!valid) {
-            android.util.Log.e("CHAN_SEC",
+            SafeLogger.e("CHAN_SEC",
                 "ПОДДЕЛКА поста channelId=${post.channelId.take(16)}... seq=${post.seq} — ОТКЛОНЁН")
             throw SecurityException("Невалидная подпись поста в канале ${post.channelId.take(16)}...")
         }
