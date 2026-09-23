@@ -159,14 +159,17 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     }
     override fun onChatReceived(peerId: String, rawDecrypted: String) {
         runOnUiThread {
-            currentPeerId = peerId
+            // Активный чат меняем ТОЛЬКО если он ещё не выбран (первый контакт).
+            // Иначе входящее от Боба НЕ угонит открытый чат Алисы: сообщение
+            // сохранится под своим пиром (handleDecrypted), notifyIncoming предупредит.
+            if (currentPeerId == "UNKNOWN") currentPeerId = peerId
             saveLastPeerId(peerId)
             handleDecrypted(peerId, rawDecrypted)
         }
     }
     override fun onInitialHandshakeReceived(peerId: String, content: String) {
         runOnUiThread {
-            currentPeerId = peerId
+            if (currentPeerId == "UNKNOWN") currentPeerId = peerId
             saveLastPeerId(peerId)
             handleIncoming(content, peerId)
         }
@@ -1802,6 +1805,10 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 if (nonce != null) nonceToIdMap[nonce] = newId
             }
         }
+        // ФАНТОМНЫЕ СООБЩЕНИЯ: рисуем в ленту ТОЛЬКО если peerId == открытый чат.
+        // Чужое сообщение (не-активный пир) сохранено в БД + уведомление, но НЕ
+        // рисуется в чужой ленте. Свои/история/системные: peerId уже == currentPeerId.
+        if (peerId != currentPeerId) return
         val tv = TextView(this).apply {
             this.text = bubbleText(text, isOwn, status)
             textSize  = 15f
