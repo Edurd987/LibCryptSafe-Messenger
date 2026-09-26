@@ -10,6 +10,9 @@ interface MessageDao {
     @Insert
     suspend fun insert(message: MessageEntity): Long
 
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM messages ORDER BY timestamp ASC")
     fun getAllMessages(): Flow<List<MessageEntity>>
 

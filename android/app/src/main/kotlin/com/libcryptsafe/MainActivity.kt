@@ -1251,6 +1251,21 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
     }
 
+    // Удаление сообщения (локально, у себя): long-press -> диалог -> deleteById + убрать бабл.
+    // SQLCipher: DELETE оставляет ЗАШИФРОВАННЫЙ след (ключ в TEE) -> безопасный мусор
+    // без ключа. У СЕБЯ: честный контроль своих данных, не чужого телефона.
+    private fun showDeleteDialog(id: Long, view: android.view.View) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Удалить сообщение?")
+            .setMessage("Сообщение удалится только у вас (на этом устройстве).")
+            .setPositiveButton("Удалить") { _, _ ->
+                lifecycleScope.launch(Dispatchers.IO) { db.messageDao().deleteById(id) }
+                containerMessages.removeView(view)
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
     private fun setupGames() {
         findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener {
             // Кирпич 5а: разделение режимов. Офлайн (локально/бот) НЕ трогает сеть;
@@ -1798,11 +1813,14 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         return if (isOwn && status == "DELIVERED") "$text  \u2713\u2713" else text
     }
 
-    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null, status: String = "NONE") {
+    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null, status: String = "NONE", msgId: Long = -1L) {
         if (persist) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
-                if (nonce != null) nonceToIdMap[nonce] = newId
+                if (nonce != null) {
+                    nonceToIdMap[nonce] = newId
+                    runOnUiThread { nonceToViewMap[nonce]?.tag = newId }   // проставить id баблу после insert
+                }
             }
         }
         // ФАНТОМНЫЕ СООБЩЕНИЯ: рисуем в ленту ТОЛЬКО если peerId == открытый чат.
@@ -1815,6 +1833,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             setPadding(28, 18, 28, 18)
             setBackgroundResource(if (isOwn) R.drawable.bubble_mine else R.drawable.bubble_other)
             setTextColor(if (isOwn) 0xFFCFFFE0.toInt() else 0xFFD5DCE4.toInt())
+            if (msgId > 0) tag = msgId   // связь бабл<->id для удаления (история知ет id сразу)
+            setOnLongClickListener { v -> (v.tag as? Long)?.let { showDeleteDialog(it, v) }; true }
         }
         if (nonce != null) nonceToViewMap[nonce] = tv
         addBubbleView(tv, isOwn)
@@ -1850,7 +1870,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             nonceToViewMap.clear()
             containerMessages.removeAllViews()   // очистить перед загрузкой диалога
             for (m in history) {
-                addMessage(m.text, m.isOwn, persist = false, peerId = peer, status = m.status)
+                addMessage(m.text, m.isOwn, persist = false, peerId = peer, status = m.status, msgId = m.id)
             }
             // МИНИ-S3: показать сохранённые в сейф фото этого диалога (PRIVATE).
             // Расшифровываем storage-ключом и рисуем ImageView в ленте. Эфемерные
