@@ -533,6 +533,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         }
                         saveBtn.setOnClickListener { saveMediaToVault(bytes, savedPeer, saveBtn) }
                         box.addView(saveBtn)
+                        attachMediaDelete(box)
                         SafeLogger.d("MEDIA_RECV", "photo shown")
                         addBubbleView(box, isOwn = false)
                     } else {
@@ -1220,6 +1221,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             setTextColor(0xFFD5DCE4.toInt())
             setOnClickListener { playVoice(bytes) }
         }
+        attachMediaDelete(btn)
         addBubbleView(btn, isOwn = false)
         SafeLogger.d("VOICE", "voice bubble shown")
     }
@@ -1264,6 +1266,21 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             }
             .setNegativeButton("Отмена", null)
             .show()
+    }
+
+    // Удаление МЕДИА из окна чата (фото/голос): ТОЛЬКО removeView (убрать с экрана).
+    // Чат = предпросмотр (in-memory), Сейф = активы (управляются в галерее S3).
+    // Эфемерное медиа в БД нет -> удалять нечего; сохранённое остаётся в сейфе.
+    private fun attachMediaDelete(view: android.view.View) {
+        view.setOnLongClickListener {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Убрать из чата?")
+                .setMessage("Медиа уберётся с экрана. Сохранённое в Сейф останется (удалите в галерее).")
+                .setPositiveButton("Убрать") { _, _ -> containerMessages.removeView(view) }
+                .setNegativeButton("Отмена", null)
+                .show()
+            true
+        }
     }
 
     private fun setupGames() {
@@ -1814,27 +1831,30 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     }
 
     private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null, status: String = "NONE", msgId: Long = -1L) {
-        if (persist) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
-                if (nonce != null) {
-                    nonceToIdMap[nonce] = newId
-                    runOnUiThread { nonceToViewMap[nonce]?.tag = newId }   // проставить id баблу после insert
-                }
-            }
-        }
         // ФАНТОМНЫЕ СООБЩЕНИЯ: рисуем в ленту ТОЛЬКО если peerId == открытый чат.
-        // Чужое сообщение (не-активный пир) сохранено в БД + уведомление, но НЕ
-        // рисуется в чужой ленте. Свои/история/системные: peerId уже == currentPeerId.
-        if (peerId != currentPeerId) return
+        if (peerId != currentPeerId) {
+            // не в открытом чате — но сохранить в БД всё равно (без отрисовки).
+            if (persist) lifecycleScope.launch(Dispatchers.IO) {
+                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
+                if (nonce != null) nonceToIdMap[nonce] = newId
+            }
+            return
+        }
         val tv = TextView(this).apply {
             this.text = bubbleText(text, isOwn, status)
             textSize  = 15f
             setPadding(28, 18, 28, 18)
             setBackgroundResource(if (isOwn) R.drawable.bubble_mine else R.drawable.bubble_other)
             setTextColor(if (isOwn) 0xFFCFFFE0.toInt() else 0xFFD5DCE4.toInt())
-            if (msgId > 0) tag = msgId   // связь бабл<->id для удаления (история知ет id сразу)
+            if (msgId > 0) tag = msgId   // история: id известен сразу
             setOnLongClickListener { v -> (v.tag as? Long)?.let { showDeleteDialog(it, v) }; true }
+        }
+        // insert ПОСЛЕ создания tv -> проставляем tag ЭТОМУ tv напрямую (по ссылке),
+        // работает для входящих И исходящих (у входящих нет nonce, но tv есть).
+        if (persist) lifecycleScope.launch(Dispatchers.IO) {
+            val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
+            if (nonce != null) nonceToIdMap[nonce] = newId
+            runOnUiThread { tv.tag = newId }   // tag тому самому tv, без nonce
         }
         if (nonce != null) nonceToViewMap[nonce] = tv
         addBubbleView(tv, isOwn)
@@ -1888,6 +1908,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     setPadding(8, 8, 8, 8)
                     setBackgroundResource(R.drawable.bubble_other)
                 }
+                attachMediaDelete(iv)
                 addBubbleView(iv, isOwn = false)
             }
         }
