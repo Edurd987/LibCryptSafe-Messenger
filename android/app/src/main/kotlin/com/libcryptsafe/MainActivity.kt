@@ -247,6 +247,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         startMessengerService()
         setContentView(R.layout.activity_main)
         cleanupExports()   // S4-C: подмести расшифрованные экспорт-следы прошлых сессий
+        setupSelectionPanel()
 
 
         containerMessages = findViewById(R.id.container_messages)
@@ -1283,6 +1284,56 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
     }
 
+    // MULTI-SELECT (групповое удаление, только текст). Состояние в памяти.
+    private var selectionMode = false
+    private val selectedMsgIds = mutableSetOf<Long>()
+    private val selectedViews = mutableMapOf<Long, android.view.View>()
+
+    private fun setupSelectionPanel() {
+        findViewById<Button>(R.id.selection_delete).setOnClickListener {
+            if (selectedMsgIds.isEmpty()) { exitSelectionMode(); return@setOnClickListener }
+            val ids = selectedMsgIds.toList()
+            lifecycleScope.launch(Dispatchers.IO) {
+                ids.forEach { db.messageDao().deleteById(it) }   // из БД
+                withContext(Dispatchers.Main) {
+                    ids.forEach { id -> selectedViews[id]?.let { containerMessages.removeView(it) } }
+                    exitSelectionMode()
+                }
+            }
+        }
+        findViewById<Button>(R.id.selection_cancel).setOnClickListener { exitSelectionMode() }
+    }
+
+    // Вход в режим + выбрать первый бабл.
+    private fun enterSelectionMode(id: Long, view: android.view.View) {
+        selectionMode = true
+        findViewById<android.view.View>(R.id.selection_panel).visibility = android.view.View.VISIBLE
+        addToSelection(id, view)
+    }
+
+    // Переключить выбор бабла (alpha-подсветка, НЕ background — сохраняем форму бабла).
+    private fun toggleSelection(id: Long, view: android.view.View) {
+        if (selectedMsgIds.contains(id)) {
+            selectedMsgIds.remove(id); selectedViews.remove(id); view.alpha = 1.0f
+            if (selectedMsgIds.isEmpty()) exitSelectionMode()
+        } else addToSelection(id, view)
+    }
+
+    private fun addToSelection(id: Long, view: android.view.View) {
+        selectedMsgIds.add(id); selectedViews[id] = view; view.alpha = 0.4f
+        updateSelectionCount()
+    }
+
+    private fun updateSelectionCount() {
+        findViewById<TextView>(R.id.selection_count).text = "Выбрано: ${selectedMsgIds.size}"
+    }
+
+    private fun exitSelectionMode() {
+        selectedViews.values.forEach { it.alpha = 1.0f }   // снять подсветку
+        selectionMode = false; selectedMsgIds.clear(); selectedViews.clear()
+        findViewById<android.view.View>(R.id.selection_panel).visibility = android.view.View.GONE
+    }
+
     private fun setupGames() {
         findViewById<LinearLayout>(R.id.card_backgammon).setOnClickListener {
             // Кирпич 5а: разделение режимов. Офлайн (локально/бот) НЕ трогает сеть;
@@ -1847,7 +1898,18 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             setBackgroundResource(if (isOwn) R.drawable.bubble_mine else R.drawable.bubble_other)
             setTextColor(if (isOwn) 0xFFCFFFE0.toInt() else 0xFFD5DCE4.toInt())
             if (msgId > 0) tag = msgId   // история: id известен сразу
-            setOnLongClickListener { v -> (v.tag as? Long)?.let { showDeleteDialog(it, v) }; true }
+            setOnLongClickListener { v ->
+                val id = v.tag as? Long
+                if (id != null) {
+                    if (selectionMode) toggleSelection(id, v) else enterSelectionMode(id, v)
+                }
+                true
+            }
+            setOnClickListener { v ->
+                val id = v.tag as? Long
+                if (selectionMode && id != null) toggleSelection(id, v)   // в режиме тап = выбор
+                // вне режима тап по тексту ничего не делает (как было)
+            }
         }
         // insert ПОСЛЕ создания tv -> проставляем tag ЭТОМУ tv напрямую (по ссылке),
         // работает для входящих И исходящих (у входящих нет nonce, но tv есть).
