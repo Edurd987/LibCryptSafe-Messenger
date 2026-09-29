@@ -35,12 +35,25 @@ android {
         }
     }
 
+    // Боевая подпись: путь и пароль ТОЛЬКО из переменных окружения сессии
+    // (LCS_KEYSTORE, LCS_KS_PASS). В файлах проекта паролей нет.
+    // ОДИН пароль на хранилище и ключ — свойство формата PKCS12
+    // (раздельные пароли не поддерживаются, keytool игнорирует -keypass).
+    signingConfigs {
+        release {
+            def ks = System.getenv("LCS_KEYSTORE")
+            if (ks) storeFile file(ks)
+            storePassword System.getenv("LCS_KS_PASS")
+            keyAlias "libcryptsafe"
+            keyPassword System.getenv("LCS_KS_PASS")
+        }
+    }
     buildTypes {
         release {
             // ЭТАП A: minify OFF (проверяем логику без обфускации). Подпись — DEBUG-ключом
             // ТОЛЬКО ДЛЯ ТЕСТА (release ставится на телефон). Боевой keystore для Google
             // Play — отдельный pre-release шаг с надёжным хранением/бэкапом ключа.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
