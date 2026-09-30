@@ -18,3 +18,11 @@
 # - kotlinx.coroutines
 # - наши JSON-модели (MediaModels, если через рефлексию)
 # Без них release упадёт в рантайме.
+
+# JNI: C++ ищет методы по имени Java_com_libcryptsafe_CryptoManager_*
+# Переименование класса/методов = краш крипто-ядра.
+-keep class com.libcryptsafe.CryptoManager { *; }
+
+# SQLCipher: нативный код, ищет свои Java-классы по имени.
+-keep class net.zetetic.** { *; }
+-dontwarn net.zetetic.**

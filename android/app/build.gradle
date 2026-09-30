@@ -54,7 +54,7 @@ android {
             // ТОЛЬКО ДЛЯ ТЕСТА (release ставится на телефон). Боевой keystore для Google
             // Play — отдельный pre-release шаг с надёжным хранением/бэкапом ключа.
             signingConfig signingConfigs.release
-            minifyEnabled false
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
