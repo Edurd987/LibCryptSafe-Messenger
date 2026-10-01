@@ -81,20 +81,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // Сертификат-пиннинг: привязка к публичному ключу relay (SPKI SHA-256).
     // Защита от MITM даже при компрометации CA (гос-во выдаёт свой корневой
     // сертификат). Подставной сертификат -> отпечаток не совпадёт -> отказ.
-    private val certPinner = okhttp3.CertificatePinner.Builder()
-        // A+ pinning: intermediate + root backup survive leaf renewal (LE renews ~30d before expiry, rotating the leaf key).
-        .add("cryptsafe-relay.duckdns.org",
-             "sha256/brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=")  // YE1 intermediate — first line, survives leaf renewal
-        .add("cryptsafe-relay.duckdns.org",
-             "sha256/sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=")  // ISRG Root YE — backup if LE rotates intermediate
-        .add("cryptsafe-relay.duckdns.org",
-             "sha256/khIJt119KS3MHja5jvJhrYarWJUv+0WchZoq+Cz8S6I=")  // current leaf — transitional, safe to remove later
-        .build()
-    private val client = OkHttpClient.Builder()
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .pingInterval(20, TimeUnit.SECONDS)
-        .certificatePinner(certPinner)
-        .build()
+    private val client = com.libcryptsafe.util.PinnedHttp.client
 
     private val SERVER_URL = "wss://cryptsafe-relay.duckdns.org/api/v1/sync"
 
@@ -1998,6 +1985,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         intentionallyClosed = true
         reconnectHandler.removeCallbacksAndMessages(null)
         networkManager?.disconnect()
-        client.dispatcher.executorService.shutdown()
+        // НЕ выключать пул: client общий (PinnedHttp) и живёт дольше Activity.
+        // shutdown здесь убивал клиент навсегда -> 'executor rejected' при реконнекте.
     }
 }

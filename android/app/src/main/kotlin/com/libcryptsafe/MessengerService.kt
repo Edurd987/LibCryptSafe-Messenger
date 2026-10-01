@@ -31,12 +31,7 @@ class MessengerService : Service() {
     fun unregisterActivity() { activityHandler = null }
 
     // L2 Кирпич 2c-1: сервис САМ поднимает крипто и клиент — не зависит от Activity.
-    private val serviceClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .pingInterval(20, TimeUnit.SECONDS)
-            .build()
-    }
+    private val serviceClient: OkHttpClient by lazy { com.libcryptsafe.util.PinnedHttp.client }
     private var myStableId: String = ""
     private var myPubKey: ByteArray? = null
 
