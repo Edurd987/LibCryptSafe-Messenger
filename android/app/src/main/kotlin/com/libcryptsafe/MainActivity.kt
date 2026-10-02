@@ -280,6 +280,20 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
 
     // L2 Кирпич 1: запуск фонового сервиса. startForegroundService (не startService) —
     // иначе на Android 8+ упадёт; сервис сам вызывает startForeground в onStartCommand.
+    private var messengerService: MessengerService? = null
+    private val svcConnection = object : android.content.ServiceConnection {
+        override fun onServiceConnected(name: android.content.ComponentName?, b: android.os.IBinder?) {
+            val svc = (b as MessengerService.LocalBinder).getService()
+            messengerService = svc
+            networkManager = svc.ensureNetwork(SERVER_URL, myStableId, myPubKey)
+            svc.registerActivity(this@MainActivity)
+        }
+        override fun onServiceDisconnected(name: android.content.ComponentName?) { messengerService = null }
+    }
+    private fun bindMessengerService() {
+        bindService(Intent(this, MessengerService::class.java), svcConnection, Context.BIND_AUTO_CREATE)
+    }
+
     private fun startMessengerService() {
         val intent = Intent(this, MessengerService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -371,13 +385,12 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             clip.setPrimaryClip(android.content.ClipData.newPlainText("LibCryptSafe ID", stableId))
             android.widget.Toast.makeText(this, getString(R.string.my_id_copied), android.widget.Toast.LENGTH_SHORT).show()
         }
-        myPubKey = CryptoManager.generateKeypair()
+        myPubKey = com.libcryptsafe.util.NetIdentity.pubKey   // B: одна пара на процесс
         if (myPubKey != null) {
             val fp = CryptoManager.getFingerprint()
             tvStatus.text = getString(R.string.status_connecting, fp.take(8))
         }
-        networkManager = NetworkManager(SERVER_URL, client, myStableId, myPubKey, applicationContext, this)
-        networkManager?.connect()
+        bindMessengerService()   // B: сеть берём у сервиса
         findViewById<android.widget.ImageButton>(R.id.btn_attach_photo).setOnClickListener {
             startPhotoPicker()
         }
@@ -1984,7 +1997,10 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         super.onDestroy()
         intentionallyClosed = true
         reconnectHandler.removeCallbacksAndMessages(null)
-        networkManager?.disconnect()
+        // B: сокет живёт в сервисе — Activity только отписывается.
+        messengerService?.unregisterActivity()
+        try { unbindService(svcConnection) } catch (_: Exception) {}
+        networkManager = null
         // НЕ выключать пул: client общий (PinnedHttp) и живёт дольше Activity.
         // shutdown здесь убивал клиент навсегда -> 'executor rejected' при реконнекте.
     }

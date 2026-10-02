@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit
 class MessengerService : Service() {
 
     // L2 Кирпич 2c: сервис владеет движком; Activity регистрируется как ЖИВОЙ слушатель.
-    private var networkManager: NetworkManager? = null
     private var activityHandler: MessengerEventHandler? = null
     private val binder = LocalBinder()
 
@@ -26,7 +25,45 @@ class MessengerService : Service() {
     }
 
     // Activity зовёт при старте: "я жива, шли события и мне тоже"
-    fun registerActivity(handler: MessengerEventHandler) { activityHandler = handler }
+    fun registerActivity(handler: MessengerEventHandler) {
+        activityHandler = handler
+        handler.onStatusChanged(lastConnected, lastReconnects)
+        val queued = synchronized(pending) { pending.toList().also { pending.clear() } }
+        queued.forEach { it(handler) }   // отдать то, что пришло без Activity
+    }
+
+    // B: сервис владеет сетью — ОДИН сокет на процесс. Activity — подписчик.
+    var networkManager: NetworkManager? = null
+        private set
+    private val pending = mutableListOf<(MessengerEventHandler) -> Unit>()
+    @Volatile private var lastConnected = false
+    @Volatile private var lastReconnects = 0
+
+    private fun dispatch(ev: (MessengerEventHandler) -> Unit) {
+        val h = activityHandler
+        if (h != null) ev(h) else synchronized(pending) { pending.add(ev) }
+    }
+
+    private val proxy = object : MessengerEventHandler {
+        override fun onStatusChanged(connected: Boolean, reconnects: Int) {
+            lastConnected = connected; lastReconnects = reconnects
+            activityHandler?.onStatusChanged(connected, reconnects)
+        }
+        override fun onHandshakeDone(fingerprint: String) = dispatch { it.onHandshakeDone(fingerprint) }
+        override fun onSystemMessage(text: String) = dispatch { it.onSystemMessage(text) }
+        override fun onPeerIdResolved(peerId: String) = dispatch { it.onPeerIdResolved(peerId) }
+        override fun onChatReceived(peerId: String, rawDecrypted: String) = dispatch { it.onChatReceived(peerId, rawDecrypted) }
+        override fun onInitialHandshakeReceived(peerId: String, content: String) = dispatch { it.onInitialHandshakeReceived(peerId, content) }
+        override fun onChannelPosts(channelId: String, posts: List<IncomingPost>) = dispatch { it.onChannelPosts(channelId, posts) }
+    }
+
+    fun ensureNetwork(serverUrl: String, stableId: String, pubKey: ByteArray?): NetworkManager {
+        networkManager?.let { return it }
+        val nm = NetworkManager(serverUrl, com.libcryptsafe.util.PinnedHttp.client, stableId, pubKey, applicationContext, proxy)
+        networkManager = nm
+        nm.connect()
+        return nm
+    }
     // Activity зовёт при уходе: "забудь про меня" (защита от утечки)
     fun unregisterActivity() { activityHandler = null }
 
@@ -37,7 +74,7 @@ class MessengerService : Service() {
 
     private fun prepareCrypto() {
         myStableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(applicationContext)
-        myPubKey = CryptoManager.generateKeypair()
+        myPubKey = com.libcryptsafe.util.NetIdentity.pubKey
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
