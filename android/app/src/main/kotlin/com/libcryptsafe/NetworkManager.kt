@@ -62,6 +62,7 @@ class NetworkManager(
                     json.put("senderId", myStableId)
                     ws.send(json.toString())
                 }
+                flushOutbox(ws)   // после регистрации — накопленное офлайн
                 // X3DH: публикуем связку prekeys (публичные части)
                 scope.launch {
                     try {
@@ -201,7 +202,29 @@ class NetworkManager(
     }
 
     // Универсальная отправка готового JSON
-    fun sendJson(json: String) { webSocket?.send(json) }
+    // MINI-OUTBOX: отправитель офлайн (или сокет мёртв, send()=false) -> уже
+    // ЗАШИФРОВАННЫЙ конверт ждёт в памяти, уходит при onOpen по порядку (FIFO).
+    // Раньше webSocket?.send молча терял сообщение. Лимит — защита памяти от медиа-залпа.
+    private val outbox = java.util.ArrayDeque<String>()
+    private val OUTBOX_MAX = 500
+    fun sendJson(json: String) {
+        val ws = webSocket
+        if (ws != null && isConnected && ws.send(json)) return
+        val size = synchronized(outbox) {
+            if (outbox.size >= OUTBOX_MAX) outbox.pollFirst()
+            outbox.addLast(json); outbox.size
+        }
+        SafeLogger.i("OUTBOX", "queued, size=$size")
+    }
+    private fun flushOutbox(ws: WebSocket) {
+        var n = 0
+        while (true) {
+            val j = synchronized(outbox) { outbox.pollFirst() } ?: break
+            if (!ws.send(j)) { synchronized(outbox) { outbox.addFirst(j) }; break }
+            n++
+        }
+        if (n > 0) SafeLogger.i("OUTBOX", "flushed $n")
+    }
 
     // Размер неотправленного буфера сокета (байты). Растёт, если шлём быстрее сети.
     fun wsQueueSize(): Long = webSocket?.queueSize() ?: 0L
