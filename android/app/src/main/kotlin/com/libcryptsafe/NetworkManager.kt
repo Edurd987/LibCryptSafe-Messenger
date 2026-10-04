@@ -52,6 +52,7 @@ class NetworkManager(
                 SafeLogger.i("NET_DIAG", "onOpen: СОКЕТ ЖИВ (было попыток=$reconnectAttempts)")
                 isConnected = true
                 reconnectAttempts = 0
+                registerNetCallback()   // после 1-го onOpen: стартовый onAvailable игнорируется
                 handler.onStatusChanged(true, reconnectAttempts)
                 handler.onSystemMessage(SysMsg.CONNECTED)
                 // Отправляем свой публичный ключ
@@ -234,7 +235,35 @@ class NetworkManager(
         pendingMessages[targetId] = plaintext
     }
 
+    // БЫСТРЫЙ РЕКОННЕКТ: система сообщила "сеть появилась" -> не ждём backoff (до 16с).
+    private var netCallbackRegistered = false
+    private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            reconnectHandler.post {
+                if (!isConnected && !intentionallyClosed) {
+                    SafeLogger.i("NET_DIAG", "network available -> быстрый реконнект")
+                    reconnectHandler.removeCallbacksAndMessages(null)
+                    reconnectAttempts = 0
+                    connect()
+                }
+            }
+        }
+    }
+    private fun registerNetCallback() {
+        if (netCallbackRegistered) return
+        try {
+            appContext.getSystemService(android.net.ConnectivityManager::class.java)
+                .registerDefaultNetworkCallback(netCallback)
+            netCallbackRegistered = true
+        } catch (e: Exception) { SafeLogger.e("NET_DIAG", "netCallback: ${e.message}") }
+    }
+
     fun disconnect() {
+        if (netCallbackRegistered) {
+            try { appContext.getSystemService(android.net.ConnectivityManager::class.java)
+                .unregisterNetworkCallback(netCallback) } catch (_: Exception) {}
+            netCallbackRegistered = false
+        }
         intentionallyClosed = true
         reconnectHandler.removeCallbacksAndMessages(null)
         webSocket?.cancel()
