@@ -113,8 +113,9 @@ const MAX_CONNECTIONS_PER_IP = 20
 const HEARTBEAT_MS = 15000
 setInterval(() => {
     clients.forEach(ws => {
-        if (ws.isAlive === false) { ws.terminate(); return }
+        if (ws.isAlive === false) { console.log('[HB] terminate: нет pong'); ws.terminate(); return }
         ws.isAlive = false
+        ws.pingAt = Date.now()
         try { ws.ping() } catch (e) {}
     })
 }, HEARTBEAT_MS)

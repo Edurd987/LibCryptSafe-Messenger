@@ -7,6 +7,20 @@ import java.util.concurrent.TimeUnit
  * Одна точка правды: при ротации сертификата пины меняются ТОЛЬКО здесь.
  * Защита от MITM даже при компрометации CA (гос-во выдаёт свой корневой сертификат).
  */
+// Малый буфер отправки сокета ОС. Иначе ~500КБ медиа уходят в буфер ОС: backpressure
+// (очередь OkHttp) их не видит, а ping/pong встают за ними -> на медленном канале (VPN)
+// пульс считает соединение мёртвым и рвёт его посреди медиа. С 64КБ backpressure
+// подстраивает темп под канал, а служебные кадры ждут не дольше нескольких секунд.
+private class SmallSendBufferSocketFactory : javax.net.SocketFactory() {
+    private val d = javax.net.SocketFactory.getDefault()
+    private fun tune(s: java.net.Socket): java.net.Socket { try { s.sendBufferSize = 64 * 1024 } catch (_: Exception) {}; return s }
+    override fun createSocket(): java.net.Socket = tune(d.createSocket())
+    override fun createSocket(h: String, p: Int): java.net.Socket = tune(d.createSocket(h, p))
+    override fun createSocket(h: String, p: Int, la: java.net.InetAddress, lp: Int): java.net.Socket = tune(d.createSocket(h, p, la, lp))
+    override fun createSocket(h: java.net.InetAddress, p: Int): java.net.Socket = tune(d.createSocket(h, p))
+    override fun createSocket(h: java.net.InetAddress, p: Int, la: java.net.InetAddress, lp: Int): java.net.Socket = tune(d.createSocket(h, p, la, lp))
+}
+
 object PinnedHttp {
     private val pinner = okhttp3.CertificatePinner.Builder()
         // YE1 intermediate — переживает обновление leaf
@@ -24,6 +38,7 @@ object PinnedHttp {
             .writeTimeout(60, TimeUnit.SECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
             .certificatePinner(pinner)
+            .socketFactory(SmallSendBufferSocketFactory())
             .build()
     }
 }
