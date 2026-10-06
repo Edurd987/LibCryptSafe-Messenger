@@ -146,6 +146,12 @@ class NetworkManager(
                     }
                                         // адресное сообщение — распаковка конверта {from,to,payload}
                     if (json.getString("type") == "msg") {
+                        // RELAY-ACK: подтверждаем доставку relay сразу (транспорт), до расшифровки.
+                        val qid = json.optLong("qid", -1L)
+                        if (qid > 0) {
+                            ws.send(JSONObject().put("type", "relay_ack").put("qid", qid).toString())
+                            if (!seenQids.add(qid)) return   // повтор — уже обработан
+                        }
                         val payloadB64 = json.optString("payload", "")
                         if (payloadB64.isEmpty()) return
                         val cipherBytes = Base64.decode(payloadB64, Base64.NO_WRAP)
@@ -206,6 +212,11 @@ class NetworkManager(
     // MINI-OUTBOX: отправитель офлайн (или сокет мёртв, send()=false) -> уже
     // ЗАШИФРОВАННЫЙ конверт ждёт в памяти, уходит при onOpen по порядку (FIFO).
     // Раньше webSocket?.send молча терял сообщение. Лимит — защита памяти от медиа-залпа.
+    // RELAY-ACK: qid уже полученных сообщений — отбрасываем повторы после переподключения.
+    private val seenQids: MutableSet<Long> = java.util.Collections.newSetFromMap(
+        object : LinkedHashMap<Long, Boolean>(256, 0.75f, false) {
+            override fun removeEldestEntry(e: MutableMap.MutableEntry<Long, Boolean>?) = size > 5000
+        })
     private val outbox = java.util.ArrayDeque<String>()
     private val OUTBOX_MAX = 500
     fun sendJson(json: String) {

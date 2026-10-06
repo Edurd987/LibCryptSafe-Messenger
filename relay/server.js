@@ -23,6 +23,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS queue (
 const qInsert = db.prepare('INSERT INTO queue (recipient,payload,created_at,ttl_expiry) VALUES (?,?,?,?)')
 const qSelect = db.prepare('SELECT id,payload FROM queue WHERE recipient=? ORDER BY created_at ASC')
 const qDelete = db.prepare('DELETE FROM queue WHERE id=?')
+const qDeleteFor = db.prepare('DELETE FROM queue WHERE id=? AND recipient=?')
 const qCleanup = db.prepare('DELETE FROM queue WHERE ttl_expiry < ?')
 
 // === P4: prekeys (X3DH) — в той же queue.db ===
@@ -79,9 +80,10 @@ function flushQueue(socket) {
             socket.send(JSON.stringify({
                 type: 'msg',
                 to: socket.senderId,
-                payload: row.payload
+                payload: row.payload,
+                qid: row.id
             }))
-            qDelete.run(row.id)
+            // RELAY-ACK: не удаляем здесь — удалим по relay_ack получателя
         }
     }
     if (rows.length > 0) console.log(`[QUEUE] выдано сообщений: ${rows.length}`)
@@ -195,25 +197,24 @@ wss.on('connection', (socket, req) => {
             if (msg.type === 'msg') {
                 const target = msg.to
                 if (!target) { console.log('[!] msg без to — дроп'); return }
+                // RELAY-ACK: сначала в очередь; удаляем только по relay_ack получателя.
+                // Мёртвый (half-open) сокет больше не теряет сообщение: нет ack -> уйдёт при переподключении.
+                const now = Date.now()
+                const qid = Number(qInsert.run(target, msg.payload, now, now + TTL_MS).lastInsertRowid)
                 let delivered = false
                 clients.forEach(client => {
                     if (client.senderId === target && client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({
-                            type: 'msg',
-                            to: target,
-                            payload: msg.payload
-                        }))
+                        client.send(JSON.stringify({ type: 'msg', to: target, payload: msg.payload, qid }))
                         delivered = true
                     }
                 })
-                if (delivered) {
-                    console.log(`[>] msg delivered`)
-                } else {
-                    // К6: получатель офлайн -> в очередь
-                    const now = Date.now()
-                    qInsert.run(target, msg.payload, now, now + TTL_MS)
-                    console.log(`[QUEUE] сообщение в очередь (офлайн)`)
-                }
+                console.log(delivered ? `[>] msg sent, ждём ack` : `[QUEUE] сообщение в очередь (офлайн)`)
+                return
+            }
+
+            if (msg.type === 'relay_ack') {
+                const qid = Number(msg.qid)
+                if (socket.senderId && qid > 0) qDeleteFor.run(qid, socket.senderId)   // удалить может только получатель
                 return
             }
 
