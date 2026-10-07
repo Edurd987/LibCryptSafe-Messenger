@@ -429,7 +429,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         val netView   = findViewById<LinearLayout>(R.id.container_network)
         val inputBar  = findViewById<LinearLayout>(R.id.container_input)
         val tabMore   = findViewById<TextView>(R.id.tab_more)
-        val moreView  = findViewById<LinearLayout>(R.id.container_more)
+        val moreView  = findViewById<android.view.View>(R.id.container_more)
         val tabGames  = findViewById<TextView>(R.id.tab_games)
         val gamesView = findViewById<android.widget.ScrollView>(R.id.container_games)
         val tabContacts = findViewById<TextView>(R.id.tab_contacts)
@@ -1507,6 +1507,20 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         swVib.isChecked = prefs.getBoolean("notif_vibration", true)
         swVib.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean("notif_vibration", checked).apply()
+        }
+        val swDis = findViewById<android.widget.Switch>(R.id.switch_disappearing)
+        swDis.isChecked = prefs.getBoolean("disappearing_24h", false)
+        swDis.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("disappearing_24h", checked).apply()
+            if (checked) purgeExpiredNow()
+        }
+        if (swDis.isChecked) purgeExpiredNow()
+    }
+
+    private fun purgeExpiredNow() {
+        lifecycleScope.launch {
+            val n = withContext(Dispatchers.IO) { com.libcryptsafe.util.DisappearingPurge.run(applicationContext) }
+            if (n > 0) loadHistory()
         }
     }
 

@@ -13,6 +13,10 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    // Исчезающие сообщения: все (входящие и исходящие) старше cutoff
+    @Query("DELETE FROM messages WHERE timestamp < :cutoff")
+    suspend fun deleteOlderThan(cutoff: Long): Int
+
     @Query("SELECT * FROM messages ORDER BY timestamp ASC")
     fun getAllMessages(): Flow<List<MessageEntity>>
 

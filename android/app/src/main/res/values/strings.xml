@@ -119,6 +119,8 @@
     <string name="notif_sound_desc">Play a sound for incoming messages</string>
     <string name="notif_vibration_label">Vibration</string>
     <string name="notif_vibration_desc">Vibrate for incoming messages</string>
+    <string name="disappearing_label">Disappearing messages</string>
+    <string name="disappearing_desc">Delete messages older than 24 hours on this device</string>
     <string name="svc_channel_name">Connection</string>
     <string name="svc_channel_desc">Keeps the secure connection active</string>
     <string name="svc_notif_title">Secure connection active</string>

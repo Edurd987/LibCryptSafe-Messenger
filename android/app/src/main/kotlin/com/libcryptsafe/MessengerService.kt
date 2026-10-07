@@ -1,5 +1,6 @@
 package com.libcryptsafe
 
+import kotlinx.coroutines.launch
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -77,10 +78,25 @@ class MessengerService : Service() {
         myPubKey = com.libcryptsafe.util.NetIdentity.pubKey
     }
 
+    // Исчезающие сообщения: очистка каждые 10 мин, пока жив процесс (и при закрытой Activity).
+    private var purgeStarted = false
+    private fun startPurgeLoop() {
+        if (purgeStarted) return
+        purgeStarted = true
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            while (true) {
+                try { com.libcryptsafe.util.DisappearingPurge.run(applicationContext) }
+                catch (e: Exception) { com.libcryptsafe.util.SafeLogger.e("PURGE", "${e.message}") }
+                kotlinx.coroutines.delay(10 * 60 * 1000L)
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(SERVICE_NOTIF_ID, buildServiceNotification())
+        startPurgeLoop()
         // START_STICKY: система попытается пересоздать сервис, если убьёт.
         return START_STICKY
     }
