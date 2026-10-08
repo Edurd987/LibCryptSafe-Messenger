@@ -40,9 +40,12 @@ class MessengerService : Service() {
     @Volatile private var lastConnected = false
     @Volatile private var lastReconnects = 0
 
-    private fun dispatch(ev: (MessengerEventHandler) -> Unit) {
+    private fun dispatch(notify: Boolean = false, ev: (MessengerEventHandler) -> Unit) {
         val h = activityHandler
-        if (h != null) ev(h) else synchronized(pending) { pending.add(ev) }
+        if (h != null) { ev(h); return }
+        synchronized(pending) { pending.add(ev) }
+        // Activity уничтожена -> сообщить пользователю (без отправителя и текста).
+        if (notify) com.libcryptsafe.util.IncomingNotifier.post(applicationContext)
     }
 
     private val proxy = object : MessengerEventHandler {
@@ -53,8 +56,8 @@ class MessengerService : Service() {
         override fun onHandshakeDone(fingerprint: String) = dispatch { it.onHandshakeDone(fingerprint) }
         override fun onSystemMessage(text: String) = dispatch { it.onSystemMessage(text) }
         override fun onPeerIdResolved(peerId: String) = dispatch { it.onPeerIdResolved(peerId) }
-        override fun onChatReceived(peerId: String, rawDecrypted: String) = dispatch { it.onChatReceived(peerId, rawDecrypted) }
-        override fun onInitialHandshakeReceived(peerId: String, content: String) = dispatch { it.onInitialHandshakeReceived(peerId, content) }
+        override fun onChatReceived(peerId: String, rawDecrypted: String) = dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(rawDecrypted)) { it.onChatReceived(peerId, rawDecrypted) }
+        override fun onInitialHandshakeReceived(peerId: String, content: String) = dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(content)) { it.onInitialHandshakeReceived(peerId, content) }
         override fun onChannelPosts(channelId: String, posts: List<IncomingPost>) = dispatch { it.onChannelPosts(channelId, posts) }
     }
 

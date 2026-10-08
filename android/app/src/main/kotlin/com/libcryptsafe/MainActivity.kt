@@ -1654,32 +1654,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     private fun notifyIncoming() {
         // Кирпич 4: приложение видно -> тихий тактильный тычок, без баннера/звука.
         if (isAppForeground) { hapticNudge(); return }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) return
-        // Тап по уведомлению -> поднять существующую активность (SINGLE_TOP,
-        // НЕ CLEAR_TASK — иначе снесётся открытый чат/набранный текст).
-        val tapIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pending = PendingIntent.getActivity(
-            this, 0, tapIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        // Флаги: звук/вибрация в обход канала (звук канала менять на лету нельзя),
-        // поэтому глушим на самом уведомлении через setSound(null)/setVibrate.
-        val builder = androidx.core.app.NotificationCompat.Builder(this, "messages_channel")
-            .setSmallIcon(android.R.drawable.ic_dialog_email)
-            .setContentTitle(getString(R.string.notif_generic_title))
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
-            .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_SECRET)
-            .setContentIntent(pending)
-            .setAutoCancel(true)
-        if (!soundEnabled()) builder.setSound(null)
-        if (vibrationEnabled()) builder.setVibrate(longArrayOf(0, 200))
-        else builder.setVibrate(longArrayOf(0))
-        val notif = builder.build()
-        androidx.core.app.NotificationManagerCompat.from(this).notify(1001, notif)
+        com.libcryptsafe.util.IncomingNotifier.post(this)
     }
 
     private fun handleIncoming(raw: String, senderPeerId: String) {
