@@ -128,8 +128,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         handshakeDone = true             // зеркало для панели Сеть
         runOnUiThread {
             tvStatus.text = "\uD83D\uDFE2 E2EE \u0430\u043a\u0442\u0438\u0432\u043d\u043e | ${fingerprint.take(8)}..."
-            addMessage(getString(R.string.handshake_done), isOwn = false)
-            addMessage(getString(R.string.can_send), isOwn = false)
+            // Состояние E2EE — только в строке статуса, без баблов в ленте.
         }
     }
     override fun onSystemMessage(text: String) {
@@ -138,6 +137,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             SysMsg.DECRYPT_ERROR -> getString(R.string.decrypt_error)
             else -> text
         }
+        // 'Подключено' — только в шапке: при пульсе/быстром реконнекте баблы засоряли
+        // ленту на каждом переподключении. Ошибки расшифровки по-прежнему видны в ленте.
+        if (text == SysMsg.CONNECTED) return
         runOnUiThread { addMessage(resolved, isOwn = false) }
     }
     override fun onPeerIdResolved(peerId: String) {
