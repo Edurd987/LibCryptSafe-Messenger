@@ -30,6 +30,12 @@ object SessionManager {
         // 1. извлекаем связку Боба
         val ikSign = unb64(peerBundle.getString("ik_sign"))
         val ikDh   = unb64(peerBundle.getString("ik_dh"))
+        // ZERO TRUST: ID = stableId(IK_SIGN). Relay мог подставить свою связку целиком —
+        // подпись SPK при этом честная (от ключа атакующего). Сверяем ключ с ID получателя.
+        if (KeyStoreManager.stableIdFromPublicKey(ikSign) != recipientId) {
+            SafeLogger.e("SESSION", "ik_sign не соответствует ID получателя — возможна подмена ключа")
+            return null
+        }
         val spkObj = peerBundle.getJSONObject("spk")
         val spkPub = unb64(spkObj.getString("value"))
         val spkSig = unb64(spkObj.getString("sig"))
@@ -62,6 +68,11 @@ object SessionManager {
         val myIkDhPub = myIkDh.publicKey
         // наш IK_SIGN публичный (для идентификации Бобом: peerId = stableId(ik_sign))
         val myIkSignPub = KeyStoreManager.getIdentityPublicKeyEncoded(context)
+        // ZERO TRUST: подпись IK_SIGN связывает наш DH-ключ и эфемерный ключ с нашей личностью
+        // и с получателем. Без неё любой выдал бы себя за нас (ik_sign публичен).
+        // Префикс — разделение доменов (не спутать с подписью SPK).
+        val authSig = KeyStoreManager.signData(
+            "LCS-X3DH-v1|${b64(myIkDhPub)}|${b64(ekPub)}|$recipientId".toByteArray(Charsets.UTF_8))
 
         // сохраняем сессию под recipientId (stableId Боба из контактов)
         AppDatabase.getInstance(context).sessionDao().upsert(
@@ -76,6 +87,7 @@ object SessionManager {
             put("ik_sign_a", b64(myIkSignPub))   // для идентификации отправителя
             put("ek_a", b64(ekPub))
             put("opk_id", opkId ?: JSONObject.NULL)
+            put("auth_sig", b64(authSig))
             // Слой 3 — payload (зашифрован)
             put("cipher", b64(cipher))
         }
@@ -97,6 +109,15 @@ object SessionManager {
         // peerId = stableId(ik_sign) — криптографически привязан к личности,
         // НЕ к произвольному полю (защита от identity spoofing)
         val peerId = KeyStoreManager.stableIdFromPublicKey(ikSignA)
+        // ZERO TRUST: подпись отправителя над (ik_a, ek_a, наш ID). Иначе любой с публичным
+        // ik_sign Алисы выдал бы себя за неё и перезаписал настоящую сессию.
+        val myId = KeyStoreManager.getOrCreateStableId(context)
+        val authSig = if (msg.isNull("auth_sig")) null else unb64(msg.getString("auth_sig"))
+        val signed = "LCS-X3DH-v1|${msg.getString("ik_a")}|${msg.getString("ek_a")}|$myId".toByteArray(Charsets.UTF_8)
+        if (authSig == null || !CryptoManager.verifySignature(ikSignA, signed, authSig)) {
+            SafeLogger.e("SESSION", "INITIAL_HANDSHAKE без валидной подписи отправителя — отклонено")
+            return DecryptedMessage(null, "")
+        }
 
         // наши приватные ключи
         val myIkDh = dao.getPrekeyById("IK_DH", PrekeyManager.IK_DH_KEY_ID) ?: return DecryptedMessage(null, "")
