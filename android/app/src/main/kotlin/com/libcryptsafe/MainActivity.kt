@@ -237,6 +237,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         setContentView(R.layout.activity_main)
         cleanupExports()   // S4-C: подмести расшифрованные экспорт-следы прошлых сессий
         setupSelectionPanel()
+        cleanupVoiceTemp()   // подмести plain-звук прошлых сессий
 
 
         containerMessages = findViewById(R.id.container_messages)
@@ -1154,6 +1155,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // VOICE (вариант C): тап -> запись, тап -> стоп -> предпросмотр -> отправить.
     // Формат: OGG/OPUS моно 16kbps (~120КБ/мин, уровень среднего -> проходит надёжно).
     private fun startVoiceRecording() {
+        if (voicePlayer != null) { toast("идёт воспроизведение"); return }
+        if (voiceSending) { toast("идёт отправка"); return }
         try {
             val f = java.io.File(cacheDir, "voice_" + System.currentTimeMillis() + ".ogg")
             val rec = if (android.os.Build.VERSION.SDK_INT >= 31)
@@ -1199,6 +1202,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     }
 
     private fun sendVoiceFile(f: java.io.File) {
+        voiceSending = true
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = f.readBytes()
@@ -1209,6 +1213,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 SafeLogger.e("VOICE", "send failed: ${e.message}")
             } finally {
                 secureShredFile(f)   // затереть plain-звук после отправки
+                voiceSending = false
             }
         }
     }
@@ -1229,8 +1234,28 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         SafeLogger.d("VOICE", "voice bubble shown")
     }
 
+    // Вторая линия обороны: plain-звук прошлых сессий (стоп до фикса, убийство процесса
+    // посреди воспроизведения/записи) — затереть при запуске. Как cleanupExports().
+    private fun cleanupVoiceTemp() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            cacheDir.listFiles { f -> f.isFile && f.name.endsWith(".ogg") &&
+                (f.name.startsWith("play_") || f.name.startsWith("voice_")) }
+                ?.forEach { secureShredFile(it) }
+        }
+    }
+
     private var voicePlayer: android.media.MediaPlayer? = null
+    @Volatile private var voiceSending = false
+    private var voicePlayFile: java.io.File? = null   // временный plain-звук текущего воспроизведения
     private fun playVoice(bytes: ByteArray) {
+        if (voicePlayer != null) {   // тап по играющему -> стоп
+            try { voicePlayer?.stop(); voicePlayer?.release() } catch (_: Exception) {}
+            voicePlayer = null
+            voicePlayFile?.let { pf -> lifecycleScope.launch(Dispatchers.IO) { secureShredFile(pf) } }
+            voicePlayFile = null; return
+        }
+        if (voiceRecorder != null) { toast("идёт запись"); return }
+        if (voiceSending) { toast("идёт отправка"); return }
         lifecycleScope.launch(Dispatchers.IO) {
             var f: java.io.File? = null
             try {
@@ -1241,6 +1266,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 mp.setDataSource(f.absolutePath)
                 mp.prepare()
                 val tmp = f
+                voicePlayFile = f
                 mp.setOnCompletionListener {
                     it.release(); voicePlayer = null
                     lifecycleScope.launch(Dispatchers.IO) { secureShredFile(tmp) }
