@@ -104,6 +104,14 @@ server.on("upgrade", (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, function (ws) { wss.emit("connection", ws, req) })
 })
 const clients = new Set()
+// UPLINK-ACK: недавние cid (10 мин) — отбросить дубли повторной отправки, когда оригинал
+// дошёл, а потерялось подтверждение. Только в памяти, без связи с отправителем.
+const recentCids = new Map()
+const CID_TTL_MS = 10 * 60 * 1000
+setInterval(() => {
+    const cutoff = Date.now() - CID_TTL_MS
+    for (const [k, ts] of recentCids) if (ts < cutoff) recentCids.delete(k)
+}, 60 * 1000)
 // DoS-защита: лимит соединений на IP. IP живёт только в памяти,
 // в логи НЕ пишется (сохраняем Blind Delivery — сервер слепой к метаданным).
 const ipConnections = new Map()
@@ -197,6 +205,10 @@ wss.on('connection', (socket, req) => {
             if (msg.type === 'msg') {
                 const target = msg.to
                 if (!target) { console.log('[!] msg без to — дроп'); return }
+                const cid = typeof msg.cid === 'string' ? msg.cid.slice(0, 64) : null
+                if (cid && recentCids.has(cid)) {   // повтор: уже принято — только подтвердить
+                    socket.send(JSON.stringify({ type: 'relay_rcvd', cid })); return
+                }
                 // RELAY-ACK: сначала в очередь; удаляем только по relay_ack получателя.
                 // Мёртвый (half-open) сокет больше не теряет сообщение: нет ack -> уйдёт при переподключении.
                 const now = Date.now()
@@ -209,6 +221,7 @@ wss.on('connection', (socket, req) => {
                     }
                 })
                 console.log(delivered ? `[>] msg sent, ждём ack` : `[QUEUE] сообщение в очередь (офлайн)`)
+                if (cid) { recentCids.set(cid, Date.now()); socket.send(JSON.stringify({ type: 'relay_rcvd', cid })) }
                 return
             }
 

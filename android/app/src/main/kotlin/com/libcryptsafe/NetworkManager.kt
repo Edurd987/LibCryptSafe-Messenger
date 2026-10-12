@@ -64,6 +64,7 @@ class NetworkManager(
                     ws.send(json.toString())
                 }
                 flushOutbox(ws)   // после регистрации — накопленное офлайн
+                resendUnacked(ws) // неподтверждённые relay'ем (мёртвый сокет до обнаружения)
                 // X3DH: публикуем связку prekeys (публичные части)
                 scope.launch {
                     try {
@@ -115,7 +116,7 @@ class NetworkManager(
                                 val envelope = JSONObject().apply {
                                     put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                                 }.toString()
-                                webSocket?.send(envelope)
+                                sendJson(envelope)
                                 SafeLogger.d("X3DH_SEND", "первое сообщение отправлено -> $targetId")
                                 handler.onSystemMessage("✓ отправлено (X3DH) $targetId")
                             } catch (e: Exception) {
@@ -145,6 +146,10 @@ class NetworkManager(
                         return
                     }
                                         // адресное сообщение — распаковка конверта {from,to,payload}
+                    if (json.getString("type") == "relay_rcvd") {
+                        synchronized(unacked) { unacked.remove(json.optString("cid")) }
+                        return
+                    }
                     if (json.getString("type") == "msg") {
                         // RELAY-ACK: подтверждаем доставку relay сразу (транспорт), до расшифровки.
                         val qid = json.optLong("qid", -1L)
@@ -217,9 +222,27 @@ class NetworkManager(
         object : LinkedHashMap<Long, Boolean>(256, 0.75f, false) {
             override fun removeEldestEntry(e: MutableMap.MutableEntry<Long, Boolean>?) = size > 5000
         })
+    // UPLINK-ACK: 'msg' хранится до relay_rcvd. Мёртвый, но ещё не обнаруженный сокет
+    // (до ~40с) принимает send()=true и теряет данные — такие переотправляются в onOpen.
+    private val unacked = java.util.LinkedHashMap<String, String>()
+    private val UNACKED_MAX = 500
     private val outbox = java.util.ArrayDeque<String>()
     private val OUTBOX_MAX = 500
     fun sendJson(json: String) {
+        try {
+            val o = JSONObject(json)
+            if (o.optString("type") == "msg") {
+                val cid = o.optString("cid").ifEmpty { java.util.UUID.randomUUID().toString().replace("-", "").take(16) }
+                o.put("cid", cid); val out = o.toString()
+                synchronized(unacked) {
+                    if (unacked.size >= UNACKED_MAX) unacked.remove(unacked.keys.first())
+                    unacked[cid] = out
+                }
+                val w = webSocket
+                if (w != null && isConnected) w.send(out)   // не подтвердят — повторим в onOpen
+                return
+            }
+        } catch (_: Exception) {}
         val ws = webSocket
         if (ws != null && isConnected && ws.send(json)) return
         val size = synchronized(outbox) {
@@ -227,6 +250,11 @@ class NetworkManager(
             outbox.addLast(json); outbox.size
         }
         SafeLogger.i("OUTBOX", "queued, size=$size")
+    }
+    private fun resendUnacked(ws: WebSocket) {
+        val list = synchronized(unacked) { unacked.values.toList() }
+        list.forEach { ws.send(it) }
+        if (list.isNotEmpty()) SafeLogger.i("UPLINK", "resent ${list.size} unacked")
     }
     private fun flushOutbox(ws: WebSocket) {
         var n = 0
