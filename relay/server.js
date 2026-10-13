@@ -1,4 +1,5 @@
 const fs = require('fs')
+const crypto = require('crypto')
 const https = require('https')
 const WebSocket = require('ws')
 const Database = require('better-sqlite3')
@@ -103,6 +104,17 @@ server.on("upgrade", (req, socket, head) => {
     if (upath !== SECRET_PATH) { socket.destroy(); return }
     wss.handleUpgrade(req, socket, head, function (ws) { wss.emit("connection", ws, req) })
 })
+// ВХОД ПО ПОДПИСИ: ID = stableId(IK_SIGN) — как KeyStoreManager.stableIdFromPublicKey.
+function stableIdFromDer(der) {
+    const h = crypto.createHash('sha256').update(der).digest().subarray(0, 8).toString('hex').toUpperCase()
+    return h.match(/.{4}/g).join('-')
+}
+function broadcastPubkey(sock) {
+    clients.forEach(client => {
+        if (client !== sock && client.readyState === WebSocket.OPEN)
+            client.send(JSON.stringify({ type: 'pubkey', key: sock.pubKey, senderId: sock.senderId }))
+    })
+}
 const clients = new Set()
 // UPLINK-ACK: недавние cid (10 мин) — отбросить дубли повторной отправки, когда оригинал
 // дошёл, а потерялось подтверждение. Только в памяти, без связи с отправителем.
@@ -146,6 +158,9 @@ wss.on('connection', (socket, req) => {
         return
     }
     clients.add(socket)
+    // ВХОД ПО ПОДПИСИ: одноразовый вызов на соединение
+    socket.authNonce = crypto.randomBytes(32).toString('hex')
+    socket.send(JSON.stringify({ type: 'auth_challenge', nonce: socket.authNonce }))
     socket.isAlive = true
     socket.on('pong', () => { socket.isAlive = true })
     ipConnections.set(ip, cur + 1)
@@ -159,21 +174,41 @@ wss.on('connection', (socket, req) => {
         try {
             const msg = JSON.parse(data.toString())
             if (msg.type === 'pubkey') {
+                // ID присваивается ТОЛЬКО входом по подписи. Здесь лишь запоминаем ключ;
+                // рассылка — после входа (порядок auth/pubkey на клиенте не важен).
                 socket.pubKey = msg.key
-                socket.senderId = msg.senderId
-                console.log(`[KEY] Received pubkey: ${msg.key.slice(0,16)}...`)
-                clients.forEach(client => {
-                    if (client !== socket && client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({ type: 'pubkey', key: msg.key, senderId: msg.senderId }))
-                    }
-                })
-                // К6: клиент представился -> выдать накопленную очередь
-                if (socket.senderId) flushQueue(socket)
+                if (socket.authedId) broadcastPubkey(socket)
+                return
+            }
+            if (msg.type === 'auth') {
+                let ok = false
+                try {
+                    const der = Buffer.from(String(msg.ik_sign), 'base64')
+                    const claim = String(msg.senderId).slice(0, 32)
+                    const data = Buffer.from(`LCS-AUTH-v1|${socket.authNonce}|${claim}`, 'utf8')
+                    ok = !!socket.authNonce && stableIdFromDer(der) === claim &&
+                        crypto.verify('sha256', data,
+                            crypto.createPublicKey({ key: der, format: 'der', type: 'spki' }),
+                            Buffer.from(String(msg.sig), 'base64'))
+                    if (ok) { socket.authedId = claim; socket.senderId = claim }
+                } catch (e) { ok = false }
+                socket.authNonce = null   // вызов одноразовый — повтор подписи бесполезен
+                if (!ok) { console.log('[AUTH] отказ'); socket.send(JSON.stringify({ type: 'auth_fail' })); return }
+                console.log('[AUTH] ok')
+                socket.send(JSON.stringify({ type: 'auth_ok' }))
+                if (socket.pubKey) broadcastPubkey(socket)
+                if (socket.pendingUpload) {   // публикация ключей, пришедшая до входа
+                    const m = socket.pendingUpload; socket.pendingUpload = null
+                    socket.emit('message', Buffer.from(JSON.stringify(m)))
+                }
+                flushQueue(socket)   // К6: только проверенному владельцу
                 return
             }
             if (msg.type === 'prekeys_upload') {
                 // публичная связка Боба: {senderId, keys:[{type,id,value,sig?}]}
                 const owner = msg.senderId
+                if (!socket.authedId) { socket.pendingUpload = msg; return }   // дождаться входа
+                if (owner !== socket.authedId) { console.log('[AUTH] upload под чужим ID — отказ'); return }
                 if (!owner || !Array.isArray(msg.keys)) return
                 const now = Date.now()
                 // IK/SPK заменяем (стабильны), OPK добавляем в пул
