@@ -146,6 +146,27 @@ class NetworkManager(
                         return
                     }
                                         // адресное сообщение — распаковка конверта {from,to,payload}
+                    // ВХОД ПО ПОДПИСИ: relay прислал одноразовый вызов -> подписываем IK_SIGN.
+                    // ID = stableId(IK_SIGN), поэтому занять чужой ID без приватного ключа нельзя.
+                    if (json.getString("type") == "auth_challenge") {
+                        val nonce = json.optString("nonce")
+                        scope.launch {
+                            try {
+                                val sig = com.libcryptsafe.db.KeyStoreManager.signData(
+                                    "LCS-AUTH-v1|$nonce|$myStableId".toByteArray(Charsets.UTF_8))
+                                val ik = com.libcryptsafe.db.KeyStoreManager.getIdentityPublicKeyEncoded(appContext)
+                                ws.send(JSONObject().apply {
+                                    put("type", "auth"); put("senderId", myStableId)
+                                    put("ik_sign", Base64.encodeToString(ik, Base64.NO_WRAP))
+                                    put("sig", Base64.encodeToString(sig, Base64.NO_WRAP))
+                                }.toString())
+                            } catch (e: Exception) { SafeLogger.e("AUTH", "подпись вызова: ${e.message}") }
+                        }
+                        return
+                    }
+                    if (json.getString("type") == "auth_ok" || json.getString("type") == "auth_fail") {
+                        SafeLogger.i("AUTH", json.getString("type")); return
+                    }
                     if (json.getString("type") == "relay_rcvd") {
                         synchronized(unacked) { unacked.remove(json.optString("cid")) }
                         return
