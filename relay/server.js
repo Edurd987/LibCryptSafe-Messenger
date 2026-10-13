@@ -121,9 +121,15 @@ const MAX_CONNECTIONS_PER_IP = 20
 // соединение висит OPEN минутами, msg 'доставляется' в пустоту. Нет pong за 15с -> terminate
 // -> 'close' чистит clients -> следующие сообщения уходят в очередь.
 const HEARTBEAT_MS = 15000
+const HB_MAX_MISSED = 3   // ~45-60с без pong -> обрыв
 setInterval(() => {
     clients.forEach(ws => {
-        if (ws.isAlive === false) { console.log('[HB] terminate: нет pong'); ws.terminate(); return }
+        // Терпимость к медленным каналам (VPN): рвём после HB_MAX_MISSED пропусков подряд.
+        // Безопасно: relay-ack/uplink-ack не дают потерять сообщения при позднем обнаружении.
+        if (ws.isAlive === false) {
+            ws.missed = (ws.missed || 0) + 1
+            if (ws.missed >= HB_MAX_MISSED) { console.log('[HB] terminate: нет pong'); ws.terminate(); return }
+        } else ws.missed = 0
         ws.isAlive = false
         ws.pingAt = Date.now()
         try { ws.ping() } catch (e) {}
