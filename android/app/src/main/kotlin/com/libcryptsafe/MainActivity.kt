@@ -1609,8 +1609,16 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     if (ack.isNotEmpty()) { markDelivered(ack); return }
                     val n = j.optString("n", "")
                     if (n.isNotEmpty()) {
-                        handleIncoming(j.optString("t", ""), peerId)
-                        sendAck(peerId, n)
+                        // ANTI-REPLAY: повтор пакета (тот же n) -> не показываем второй раз.
+                        // ACK шлём ВСЕГДА: первый мог потеряться, иначе отправитель повторяет вечно.
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            val fresh = db.seenNonceDao().markSeen(peerId, n)
+                            withContext(Dispatchers.Main) {
+                                if (fresh) handleIncoming(j.optString("t", ""), peerId)
+                                else SafeLogger.i("REPLAY", "dup chat nonce from $peerId — скрыто")
+                                sendAck(peerId, n)
+                            }
+                        }
                         return
                     }
                     return
