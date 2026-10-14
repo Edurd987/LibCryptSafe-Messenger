@@ -11,8 +11,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
-    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class, ChannelEntity::class, PostEntity::class, MediaEntity::class],
-    version = 7, exportSchema = false)
+    entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class, ChannelEntity::class, PostEntity::class, MediaEntity::class, SeenNonceEntity::class],
+    version = 8, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun contactDao(): ContactDao
@@ -21,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun channelDao(): ChannelDao
     abstract fun postDao(): PostDao
     abstract fun mediaDao(): MediaDao
+    abstract fun seenNonceDao(): SeenNonceDao
 
     companion object {
         @Volatile
@@ -83,6 +84,18 @@ abstract class AppDatabase : RoomDatabase() {
 
         // Миграция v6->v7: таблица media (сейф сохранённых фото). Данные v6 целы
         // (CREATE TABLE IF NOT EXISTS, старые таблицы не трогаем).
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS seen_nonces (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "peerId TEXT NOT NULL, " +
+                    "nonce TEXT NOT NULL, " +
+                    "timestamp INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_seen_peer_nonce ON seen_nonces(peerId, nonce)")
+            }
+        }
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -142,7 +155,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 ).openHelperFactory(factory)
-                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)  // путь B: данные сохраняются
+                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)  // путь B: данные сохраняются
                       .build()
 
                 val instance = try {

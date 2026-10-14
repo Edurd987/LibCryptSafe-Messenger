@@ -29,6 +29,9 @@ class X3dhSecurityTest {
         myId = KeyStoreManager.getOrCreateStableId(ctx)
         PrekeyManager.bootstrap(ctx)
         dao = AppDatabase.getInstance(ctx).prekeyDao()
+        // Патч 3 отвергает повторное рукопожатие при живой сессии. Тесты шлют себе
+        // через один myId -> чистим сессию перед каждым тестом (иначе ловим сами себя).
+        AppDatabase.getInstance(ctx).sessionDao().deleteSession(myId)
     }
 
     // Связка «самому себе» в формате ответа relay.
@@ -84,6 +87,29 @@ class X3dhSecurityTest {
         val other = com.libcryptsafe.CryptoManager.generateKeypair()!!
         val msg = honest().apply { put("ik_sign_a", b64(other)) }
         assertNull(SessionManager.handleInitialMessage(ctx, msg).content)
+    }
+
+    // (f) REPLAY X3DH: повтор первого сообщения не перезаписывает живую сессию
+    @Test fun f_replay_initial_rejected() = runBlocking {
+        val sdao = AppDatabase.getInstance(ctx).sessionDao()
+        val msg = honest("first")
+        val r1 = SessionManager.handleInitialMessage(ctx, msg)      // первое — принято
+        assertEquals("first", r1.content?.let { String(it) })
+        val s1 = sdao.getSession(r1.peerId)!!
+        val r2 = SessionManager.handleInitialMessage(ctx, msg)      // ПОВТОР того же пакета
+        assertNull("повтор INITIAL_HANDSHAKE должен быть отвергнут", r2.content)
+        val s2 = sdao.getSession(r1.peerId)!!
+        assertArrayEquals("сессия не должна перезаписаться повтором", s1.kEnc, s2.kEnc)
+        sdao.deleteSession(r1.peerId)
+    }
+
+    // (g) окно nonce: повтор (peer, nonce) отвергается, первый — принят
+    @Test fun g_seen_nonce_window() = runBlocking {
+        val dao = AppDatabase.getInstance(ctx).seenNonceDao()
+        val peer = "TEST-PEER-0001"; val nn = "nonce-" + System.currentTimeMillis()
+        assertTrue("первый nonce — новый", dao.markSeen(peer, nn))
+        assertFalse("повтор того же nonce — дубль", dao.markSeen(peer, nn))
+        assertTrue("другой nonce того же peer — новый", dao.markSeen(peer, nn + "x"))
     }
 
     // (e) фикс 1: связка с ключом, не совпадающим с ID -> инициатор вернул null

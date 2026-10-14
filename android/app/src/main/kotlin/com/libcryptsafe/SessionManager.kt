@@ -109,6 +109,15 @@ object SessionManager {
         // peerId = stableId(ik_sign) — криптографически привязан к личности,
         // НЕ к произвольному полю (защита от identity spoofing)
         val peerId = KeyStoreManager.stableIdFromPublicKey(ikSignA)
+        // ANTI-REPLAY X3DH: ТОЧНЫЙ повтор пакета (тот же auth_sig) отвергаем — иначе replay
+        // перезапишет сессию старыми ключами (откат forward secrecy). Привязка к auth_sig,
+        // а НЕ к факту сессии: честное повторное знакомство (собеседник переустановил) проходит.
+        val authSigId = msg.optString("auth_sig", "")
+        if (authSigId.isNotEmpty() &&
+            !AppDatabase.getInstance(context).seenNonceDao().markSeen(peerId, "x3dh:" + authSigId)) {
+            SafeLogger.w("SESSION", "INITIAL_HANDSHAKE повтор (auth_sig видели) — replay, отклонено")
+            return DecryptedMessage(null, "")
+        }
         // ZERO TRUST: подпись отправителя над (ik_a, ek_a, наш ID). Иначе любой с публичным
         // ik_sign Алисы выдал бы себя за неё и перезаписал настоящую сессию.
         val myId = KeyStoreManager.getOrCreateStableId(context)
