@@ -16,4 +16,8 @@ interface SeenNonceDao {
 
     @Query("DELETE FROM seen_nonces WHERE timestamp < :cutoff")
     suspend fun purgeOlderThan(cutoff: Long): Int
+
+    // Только записи чата. X3DH (x3dh:...) не удаляем: их мало, а защита от отката сессии постоянная.
+    @Query("DELETE FROM seen_nonces WHERE timestamp < :cutoff AND nonce NOT LIKE 'x3dh:%'")
+    suspend fun purgeChatOlderThan(cutoff: Long): Int
 }

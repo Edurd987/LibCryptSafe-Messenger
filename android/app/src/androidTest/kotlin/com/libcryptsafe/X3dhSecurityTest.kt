@@ -112,6 +112,18 @@ class X3dhSecurityTest {
         assertTrue("другой nonce того же peer — новый", dao.markSeen(peer, nn + "x"))
     }
 
+    // (h) очистка: старый чат удаляется (контроль), X3DH той же давности — остаётся
+    @Test fun h_purge_keeps_x3dh() = runBlocking {
+        val dao = AppDatabase.getInstance(ctx).seenNonceDao()
+        val peer = "TEST-PURGE-0001"
+        val old = System.currentTimeMillis() - 40L * 24 * 3600 * 1000
+        dao.insert(com.libcryptsafe.db.SeenNonceEntity(peerId = peer, nonce = "chat-old-$old", timestamp = old))
+        dao.insert(com.libcryptsafe.db.SeenNonceEntity(peerId = peer, nonce = "x3dh:old-$old", timestamp = old))
+        dao.purgeChatOlderThan(System.currentTimeMillis() - com.libcryptsafe.util.ReplayWindow.RETENTION_MS)
+        assertTrue("старый чат удалён -> снова 'новый' (очистка сработала)", dao.markSeen(peer, "chat-old-$old"))
+        assertFalse("X3DH НЕ удалён -> всё ещё дубль (откат сессии невозможен)", dao.markSeen(peer, "x3dh:old-$old"))
+    }
+
     // (e) фикс 1: связка с ключом, не совпадающим с ID -> инициатор вернул null
     @Test fun e_bundle_key_mismatch_rejected() = runBlocking {
         val bundle = myBundle()

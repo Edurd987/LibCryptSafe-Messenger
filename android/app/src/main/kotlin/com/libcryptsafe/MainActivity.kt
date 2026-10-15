@@ -1609,6 +1609,11 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     if (ack.isNotEmpty()) { markDelivered(ack); return }
                     val n = j.optString("n", "")
                     if (n.isNotEmpty()) {
+                        // ANTI-REPLAY (время): старше окна -> отвергаем. Нет ts — старый формат, полагаемся на nonce.
+                        val ts = j.optLong("ts", 0L)
+                        if (ts > 0 && System.currentTimeMillis() - ts > com.libcryptsafe.util.ReplayWindow.MAX_AGE_MS) {
+                            SafeLogger.i("REPLAY", "stale chat ts from $peerId — отклонено"); return
+                        }
                         // ANTI-REPLAY: повтор пакета (тот же n) -> не показываем второй раз.
                         // ACK шлём ВСЕГДА: первый мог потеряться, иначе отправитель повторяет вечно.
                         lifecycleScope.launch(Dispatchers.IO) {
@@ -1819,6 +1824,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     put("v", 1)
                     put("n", msgNonce)
                     put("t", plaintext)
+                    put("ts", System.currentTimeMillis())   // анти-replay: внутри шифра, подделать нельзя
                 }.toString()
                 val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, inner)
                 if (pkt != null) {
