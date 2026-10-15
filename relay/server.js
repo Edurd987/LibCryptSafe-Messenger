@@ -98,7 +98,11 @@ const server = https.createServer({
     res.end(FACADE_HTML)
 })
 
-const wss = new WebSocket.Server({ noServer: true })
+// DoS: лимит кадра. Легитимный максимум ~64КБ (медиа-чанк 24КБ x двойной base64);
+// больше -> ws закрывает соединение кодом 1009.
+const MAX_FRAME = 256 * 1024
+const AUTH_TIMEOUT_MS = 30000   // не вошёл по подписи за 30с -> закрываем
+const wss = new WebSocket.Server({ noServer: true, maxPayload: MAX_FRAME })
 server.on("upgrade", (req, socket, head) => {
     const upath = (req.url || "").split("?")[0]
     if (upath !== SECRET_PATH) { socket.destroy(); return }
@@ -161,6 +165,8 @@ wss.on('connection', (socket, req) => {
     // ВХОД ПО ПОДПИСИ: одноразовый вызов на соединение
     socket.authNonce = crypto.randomBytes(32).toString('hex')
     socket.send(JSON.stringify({ type: 'auth_challenge', nonce: socket.authNonce }))
+    // Таймаут входа: молчащий сокет не должен вечно занимать слот (лимит на IP).
+    setTimeout(() => { if (!socket.authedId) { console.log('[AUTH] таймаут входа'); socket.terminate() } }, AUTH_TIMEOUT_MS)
     socket.isAlive = true
     socket.on('pong', () => { socket.isAlive = true })
     ipConnections.set(ip, cur + 1)
