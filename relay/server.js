@@ -12,6 +12,9 @@ const TTL_MS = (Number(process.env.LCS_TTL_DAYS) || 7) * 24 * 3600 * 1000   // 7
 // === К6: офлайн-очередь (SQLite) ===
 const db = new Database(process.env.LCS_DB_PATH || '/opt/libcryptsafe/queue.db')
 db.pragma('journal_mode = WAL')
+// Затирать удалённое: иначе ID получателей и шифротексты доставленных сообщений
+// остаются в свободных страницах и восстанавливаются при изъятии диска.
+db.pragma('secure_delete = ON')
 db.exec(`CREATE TABLE IF NOT EXISTS queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   recipient TEXT NOT NULL,
@@ -218,11 +221,12 @@ wss.on('connection', (socket, req) => {
                 if (!owner || !Array.isArray(msg.keys)) return
                 const now = Date.now()
                 // IK/SPK заменяем (стабильны), OPK добавляем в пул
+                // СНИМОК: загрузка ЗАМЕНЯЕТ ключи владельца присланных типов. Раньше удалялся
+                // несуществующий тип 'IK' — IK_SIGN/IK_DH и OPK копились при каждом подключении
+                // (12 копий IK, ~600 OPK на пользователя), relay мог выдать уже использованный OPK.
                 const insertAll = db.transaction(() => {
-                    for (const k of msg.keys) {
-                        if (k.type === 'IK' || k.type === 'SPK') pkDeleteType.run(owner, k.type)
-                        pkInsert.run(owner, k.type, k.id|0, k.value, k.sig || null, now)
-                    }
+                    for (const ty of new Set(msg.keys.map(k => k.type))) pkDeleteType.run(owner, ty)
+                    for (const k of msg.keys) pkInsert.run(owner, k.type, k.id|0, k.value, k.sig || null, now)
                 })
                 insertAll()
                 // no-log на диск (митигация слежки): только счётчик в памяти

@@ -83,6 +83,15 @@ const authed = c => c.inbox.some(m => m.type === 'auth_ok')
     await sleep(800)
     check('control: owner ack deletes', qCount(T) === 0)
 
+    // СНИМОК КЛЮЧЕЙ: две одинаковые публикации -> строк столько же, сколько ключей в одной
+    const keys = [{ type: 'IK_SIGN', id: 0, value: 'S' }, { type: 'IK_DH', id: 1, value: 'D' },
+                  { type: 'SPK', id: 1, value: 'P', sig: 'G' },
+                  { type: 'OPK', id: 1, value: 'o1' }, { type: 'OPK', id: 2, value: 'o2' }, { type: 'OPK', id: 3, value: 'o3' }]
+    own.ws.send(JSON.stringify({ type: 'prekeys_upload', senderId: T, keys })); await sleep(600)
+    check('prekeys: first upload stored (control)', pkCount(T) === keys.length)
+    own.ws.send(JSON.stringify({ type: 'prekeys_upload', senderId: T, keys })); await sleep(600)
+    check('prekeys: re-upload does not duplicate', pkCount(T) === keys.length)
+
     // DoS-РАЗМЕР: контроль — 60КБ принят; 400КБ — соединение закрыто (1009)
     const T2 = 'SIZE-0000-0000-' + (1000 + Math.floor(Math.random() * 9000))
     const big = await open(null)
