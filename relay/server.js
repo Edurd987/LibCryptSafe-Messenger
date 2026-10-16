@@ -1,5 +1,6 @@
 const fs = require('fs')
 const crypto = require('crypto')
+const { IDLE_MS, housekeepPrekeys } = require('./housekeeping.js')
 const https = require('https')
 const WebSocket = require('ws')
 const Database = require('better-sqlite3')
@@ -72,6 +73,11 @@ const cpSelect = db.prepare('SELECT seq,payload FROM channel_posts WHERE channel
 function cleanupTTL() {
     const removed = qCleanup.run(Date.now()).changes
     if (removed > 0) console.log(`[TTL] удалено просроченных: ${removed}`)
+    const idle = housekeepPrekeys(db, Date.now() - IDLE_MS)
+    if (idle > 0) console.log(`[HOUSEKEEP] удалено ключей неактивных ID: ${idle}`)
+    // WAL хранит прежние версии страниц (в т.ч. удалённые ID) — сжимаем журнал до нуля,
+    // иначе криминалистические остатки живут мимо secure_delete.
+    db.pragma('wal_checkpoint(TRUNCATE)')
 }
 cleanupTTL()
 setInterval(cleanupTTL, 3600 * 1000)
