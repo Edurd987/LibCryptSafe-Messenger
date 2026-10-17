@@ -51,9 +51,8 @@ android {
     }
     buildTypes {
         release {
-            // ЭТАП A: minify OFF (проверяем логику без обфускации). Подпись — DEBUG-ключом
-            // ТОЛЬКО ДЛЯ ТЕСТА (release ставится на телефон). Боевой keystore для Google
-            // Play — отдельный pre-release шаг с надёжным хранением/бэкапом ключа.
+            // Боевая сборка: обфускация ON, подпись боевым ключом (LCS_KEYSTORE из env).
+            // debuggable здесь НЕ ставить: открыл бы run-as и отладчик к памяти с ключами.
             signingConfig signingConfigs.release
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
