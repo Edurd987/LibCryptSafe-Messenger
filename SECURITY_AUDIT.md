@@ -23,14 +23,15 @@
 | 12 | Утечка памяти при half-open | relay | TODO | мониторинг памяти за час |
 | 13 | SNI/DNS раскрывает домен (DPI) | транспорт | TODO | ECH / маскировка; стратегический |
 | 14 | Фаззинг клиента (битый JSON/base64/чанк) | клиент | TODO | приложение не должно падать |
-| 15 | Манифест: exported, allowBackup, cleartext | клиент | TODO | OWASP MASVS |
+| 15 | Манифест: exported, allowBackup, cleartext, перенос данных | клиент | PASS | allowBackup=false, cleartext=false, dataExtractionRules (Android 12+), exported только launcher |
 | 16 | Данные вне SQLCipher (prefs, cache) | клиент | TODO | |
-| 17 | MITM с подменой сертификата | клиент | TODO | Kali/mitmproxy vs pinning |
+| 17 | MITM с подменой сертификата | клиент | PASS | PinningTest: ложный пин отвергнут; клиент приложения с 3 пинами; Root YE и YE1 держат связь поодиночке |
 | 18 | Release: логи вырезаны, debuggable off | клиент | TODO | проверка финальной сборки |
 | 19 | Уязвимые зависимости | оба | TODO | свой SBOM/OSV-сканер |
 | 20 | queue.db без открытого текста (Blind Delivery) | relay | PASS | канарейка: сообщение в очереди, ID виден (контроль), текст — нет |
 | 24 | Остатки удалённых записей (ID получателей в свободных страницах) | relay | PASS | secure_delete + VACUUM; база 25МБ -> 299КБ |
 | 25 | Связки неактивных ID висят вечно (метаданные + место) | relay | PASS | IDLE 30д по MAX(created_at); housekeeping_test 3/3; на сервере удалено 211; WAL сжимается ежечасно |
+| 26 | Root YE (новый корень LE) на старых Android (minSdk 26) | клиент | TODO | проверить доверие на Android 8-11 до релиза |
 | 21 | Тест честного повторного знакомства (переустановка) | клиент | TODO | auth_sig-окно должно пропустить новый handshake |
 | 22 | Purge старых nonce по времени | клиент | PASS | чат >30д удаляется, X3DH никогда; ts в шифре, MAX_AGE 28д < RETENTION 30д (тест h) |
 | 23 | Replay медиа (media_* мимо окна nonce) | клиент | TODO | повтор старого фото, вероятно, покажет его снова |

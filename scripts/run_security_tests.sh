@@ -30,7 +30,7 @@ if "$ADB" -s "$DEVICE" install -r -t android/app/build/outputs/apk/debug/app-deb
 then mark "установка APK" PASS; else mark "установка APK" FAIL; fi
 
 echo "== 3. Инструментальные тесты =="
-for C in X3dhSecurityTest SessionIntegrityTest; do
+for C in X3dhSecurityTest SessionIntegrityTest PinningTest; do
     OUT=$("$ADB" -s "$DEVICE" shell am instrument -w -e class "com.libcryptsafe.$C" "$RUNNER" 2>&1)
     N=$(echo "$OUT" | grep -oE "OK \([0-9]+ tests?\)")
     if [ -n "$N" ]; then mark "android: $C" "PASS"; echo "  $C: $N"
