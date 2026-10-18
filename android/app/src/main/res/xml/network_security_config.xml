@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Только ЯКОРЬ ДОВЕРИЯ, не пины (пины — в PinnedHttp). Сейчас старые Android доверяют
+     relay через перекрёстные подписи Root YE <- X2 <- X1, но Let's Encrypt может укоротить
+     цепочку при любом обновлении сертификата. Вшитый Root YE (до 2032-09-02, проверен:
+     пин sCkq + подпись YE1) делает доверие независимым от выбора цепочки.
+     Пользовательские CA не принимаются. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false"/>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">cryptsafe-relay.duckdns.org</domain>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="@raw/root_ye"/>
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

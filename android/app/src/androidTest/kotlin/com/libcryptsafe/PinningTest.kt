@@ -32,6 +32,16 @@ class PinningTest {
         assertEquals("ожидаем 3 пина (leaf, YE1, Root YE)", 3, p.pins.size)
     }
 
+    // Вшитый якорь (res/raw/root_ye) — действительно Root YE: его ключ = пин sCkq.
+    @Test fun bundled_root_matches_pin() {
+        val ctx = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val cert = ctx.resources.openRawResource(R.raw.root_ye).use {
+            java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(it) as java.security.cert.X509Certificate
+        }
+        val spki = java.security.MessageDigest.getInstance("SHA-256").digest(cert.publicKey.encoded)
+        assertEquals("sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=", android.util.Base64.encodeToString(spki, android.util.Base64.NO_WRAP))
+    }
+
     @Test fun bogus_pin_rejected() {
         val e = connect("sha256/" + "A".repeat(43) + "=")
         assertTrue("ложный пин обязан оборвать соединение, получено: $e", e is javax.net.ssl.SSLPeerUnverifiedException)
