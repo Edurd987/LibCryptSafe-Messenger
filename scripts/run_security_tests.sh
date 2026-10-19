@@ -48,6 +48,12 @@ then mark "relay: протокол" PASS; else mark "relay: протокол" FA
 if ssh "$RELAY" "cd /opt/libcryptsafe && runuser -u libcrypt -- node test/housekeeping_test.js" | tail -1 | grep -q "ALL PASS"
 then mark "relay: гигиена" PASS; else mark "relay: гигиена" FAIL; fi
 
+# Версии TLS: 1.0/1.1 должны быть отвергнуты, 1.2/1.3 приняты (контроль детектора).
+TLSR=$(ssh "$RELAY" 'H=cryptsafe-relay.duckdns.org; for v in tls1 tls1_1 tls1_2 tls1_3; do
+  echo | openssl s_client -connect $H:443 -servername $H -$v -cipher "DEFAULT@SECLEVEL=0" 2>&1 | grep -q "Cipher is (NONE)" && echo -n "N" || echo -n "Y"; done')
+if [ "$TLSR" = "NNYY" ]; then mark "relay: TLS 1.0/1.1 нет, 1.2/1.3 да" PASS
+else mark "relay: TLS 1.0/1.1 нет, 1.2/1.3 да" "FAIL (получено $TLSR, ждём NNYY)"; fi
+
 echo; echo "================ ИТОГ ================"
 for k in "${!RES[@]}"; do printf "%-38s %s\n" "$k" "${RES[$k]}"; done | sort
 echo "======================================"

@@ -58,6 +58,28 @@ class PinningTest {
         assertTrue("ожидали запрет CLEARTEXT, получено: $e", e is java.net.UnknownServiceException && e.message!!.contains("CLEARTEXT"))
     }
 
+    // Плохие сертификаты (badssl.com): клиент приложения обязан отвергнуть каждый.
+    private fun appGet(url: String): Throwable? = try {
+        com.libcryptsafe.util.PinnedHttp.client.newCall(okhttp3.Request.Builder().url(url).build()).execute().close(); null
+    } catch (e: Throwable) { e }
+
+    @Test fun badssl_valid_control() =
+        assertNull("контроль: сайт с правильным сертификатом должен открываться", appGet("https://badssl.com/"))
+
+    @Test fun badssl_bad_certs_rejected() {
+        for (u in listOf("https://expired.badssl.com/", "https://wrong.host.badssl.com/",
+                         "https://self-signed.badssl.com/", "https://untrusted-root.badssl.com/")) {
+            val e = appGet(u)
+            assertTrue("$u должен быть отвергнут, получено: $e", e is javax.net.ssl.SSLException)
+        }
+    }
+
+    // Relay по IP: сертификат выдан на имя, не на адрес -> обязана упасть проверка имени.
+    @Test fun relay_by_ip_rejected() {
+        val e = appGet("https://87.199.204.168/")
+        assertTrue("подключение по IP должно быть отвергнуто, получено: $e", e is javax.net.ssl.SSLException)
+    }
+
     @Test fun bogus_pin_rejected() {
         val e = connect("sha256/" + "A".repeat(43) + "=")
         assertTrue("ложный пин обязан оборвать соединение, получено: $e", e is javax.net.ssl.SSLPeerUnverifiedException)

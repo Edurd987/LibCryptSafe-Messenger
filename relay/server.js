@@ -100,6 +100,7 @@ function flushQueue(socket) {
 }
 
 const server = https.createServer({
+    minVersion: 'TLSv1.2',   // явно: не зависим от умолчаний Node и флагов запуска
     cert: fs.readFileSync((process.env.LCS_CERT_DIR || '/opt/libcryptsafe/certs') + '/fullchain.pem'),
     key: fs.readFileSync((process.env.LCS_CERT_DIR || '/opt/libcryptsafe/certs') + '/privkey.pem')
 }, function (req, res) {
