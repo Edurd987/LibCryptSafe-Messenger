@@ -19,6 +19,11 @@ R=$(ssh "$RELAY" "sha256sum /opt/libcryptsafe/server.js" | cut -c1-16)
 if [ "$L" = "$R" ]; then mark "relay: развёрнута версия из репо" PASS
 else mark "relay: развёрнута версия из репо" "FAIL (локально $L, на сервере $R)"; fi
 
+# Растяжка: certbot обновляет за 30 дней до конца. Меньше 25 — автообновление не сработало.
+DAYS=$(ssh "$RELAY" 'END=$(echo | openssl s_client -connect cryptsafe-relay.duckdns.org:443 -servername cryptsafe-relay.duckdns.org 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2); echo $(( ($(date -d "$END" +%s) - $(date +%s)) / 86400 ))')
+if [ "${DAYS:-0}" -ge 25 ]; then mark "сертификат relay: дней до конца $DAYS" PASS
+else mark "сертификат relay: дней до конца ${DAYS:-?}" "FAIL (автообновление не сработало?)"; fi
+
 echo "== 1. Сборка =="
 if (cd android && ./gradlew -q assembleDebug assembleDebugAndroidTest); then mark "сборка" PASS
 else mark "сборка" FAIL; fi
