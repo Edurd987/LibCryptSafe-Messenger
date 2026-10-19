@@ -42,6 +42,22 @@ class PinningTest {
         assertEquals("sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=", android.util.Base64.encodeToString(spki, android.util.Base64.NO_WRAP))
     }
 
+    // HTTP без TLS: клиент приложения обязан отказать ДО выхода в сеть (network_security_config).
+    // Контроль — текст исключения: именно политика CLEARTEXT, а не сетевой сбой.
+    private fun cleartext(url: String): Throwable? = try {
+        com.libcryptsafe.util.PinnedHttp.client.newCall(okhttp3.Request.Builder().url(url).build()).execute().close(); null
+    } catch (e: Throwable) { e }
+
+    @Test fun cleartext_blocked_for_relay() {
+        val e = cleartext("http://cryptsafe-relay.duckdns.org/")
+        assertTrue("ожидали запрет CLEARTEXT, получено: $e", e is java.net.UnknownServiceException && e.message!!.contains("CLEARTEXT"))
+    }
+
+    @Test fun cleartext_blocked_for_any_host() {
+        val e = cleartext("http://example.com/")
+        assertTrue("ожидали запрет CLEARTEXT, получено: $e", e is java.net.UnknownServiceException && e.message!!.contains("CLEARTEXT"))
+    }
+
     @Test fun bogus_pin_rejected() {
         val e = connect("sha256/" + "A".repeat(43) + "=")
         assertTrue("ложный пин обязан оборвать соединение, получено: $e", e is javax.net.ssl.SSLPeerUnverifiedException)
