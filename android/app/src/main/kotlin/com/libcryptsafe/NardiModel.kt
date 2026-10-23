@@ -22,6 +22,9 @@ data class NardiGameState(
     val isOpening: Boolean = true, // фаза розыгрыша первого хода
     val bornOffWhite: Int = 0,    // выброшено белых
     val bornOffBlack: Int = 0,    // выброшено чёрных
+    // R1: текущий бросок — дубль (ставят rollDice/applyRoll; обе стороны сети
+    // вычисляют одинаково из (a,b) -> синхронность сохраняется).
+    val rolledDouble: Boolean = false,
     // --- ПОД-КИРПИЧ 0 (короткие нарды, жёсткая изоляция): бар. ---
     // Дефолт 0: длинные нарды это поле НЕ читают и НЕ пишут -> их
     // поведение не меняется. Использует только ShortNardiModel.
@@ -92,20 +95,20 @@ fun rollOpening(state: NardiGameState): NardiGameState {
     val b = (1..6).random()
     if (w == b) return state.copy(dice = null, isOpening = true)  // ничья -> переброс
     val first = if (w > b) PlayerType.WHITE else PlayerType.BLACK
-    return state.copy(dice = listOf(w, b), turn = first, isOpening = false)
+    return state.copy(dice = listOf(w, b), turn = first, isOpening = false, rolledDouble = false)
 }
 
 fun rollDice(state: NardiGameState): NardiGameState {
     val a = (1..6).random()
     val b = (1..6).random()
     val dice = if (a == b) listOf(a, a, a, a) else listOf(a, b)  // дубль -> 4 хода
-    return state.copy(dice = dice)
-}
+    return state.copy(dice = dice, rolledDouble = a == b)
+}
 
 // Сетевой приём броска: соперник прислал кости — ставим их БЕЗ генерации.
 fun applyRoll(state: NardiGameState, a: Int, b: Int): NardiGameState {
     val dice = if (a == b) listOf(a, a, a, a) else listOf(a, b)
-    return state.copy(dice = dice)
+    return state.copy(dice = dice, rolledDouble = a == b)
 }
 
 
@@ -167,7 +170,7 @@ private fun creates6Block(board: List<PointState>, player: PlayerType): Boolean 
     return false
 }
 
-fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
+private fun isLegalStep(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     if (fromIndex !in 0..23 || toIndex !in 0..23) return false
     val dice = state.dice ?: return false           // зары не брошены
     val from = state.board[fromIndex]
@@ -177,8 +180,12 @@ fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean {
     if (fromIndex == head) {
         // обычный лимит головы = 1; исключение: первый ход партии + дубль 6/4/3 = 2
         val dieVal = state.dice.firstOrNull() ?: 0
-        val isSpecialDouble = state.dice.size >= 4 && dieVal in intArrayOf(6, 4, 3)
-        val headLimit = if (state.isFirstTurn && isSpecialDouble) 2 else 1
+        val isSpecialDouble = state.rolledDouble && dieVal in intArrayOf(6, 4, 3)
+        // R1: первый ход игрока <=> в начале хода на голове стояли все 15
+        // (на голове сейчас + снятые в этом ходу). Работает для ОБОИХ цветов;
+        // старый isFirstTurn сбрасывался до первого хода чёрных -> правило было мёртвым.
+        val firstTurnOfPlayer = from.count + state.headCount == 15
+        val headLimit = if (firstTurnOfPlayer && isSpecialDouble) 2 else 1
         if (state.headCount >= headLimit) return false
     }
     val to = state.board[toIndex]
@@ -211,6 +218,12 @@ fun consumeDie(state: NardiGameState, dist: Int): NardiGameState {
 // ===== ЕСТЬ ЛИ ХОТЯ БЫ ОДИН ЛЕГАЛЬНЫЙ ХОД =====
 // Перебор всех from(0..23) x to(0..23). Если ни одного — ход сгорает.
 fun hasAnyLegalMove(state: NardiGameState): Boolean {
+    if (state.dice == null) return false
+    return maxDiceUsable(state) > 0                      // R2: тот же перебор, без двойной работы
+}
+
+@Suppress("unused")
+private fun hasAnyLegalMoveOld(state: NardiGameState): Boolean {
     if (state.dice == null) return false
     for (from in 0..23) {
         if (state.board[from].count <= 0) continue
@@ -261,7 +274,7 @@ fun distToOff(player: PlayerType, fromIndex: Int): Int {
 
 // Можно ли выбросить шашку с fromIndex текущим заром?
 // Условие: все дома + (зар точно равен расстоянию ИЛИ зар больше и нет шашек дальше от выхода).
-fun canBearOff(state: NardiGameState, fromIndex: Int): Boolean {
+private fun canBearOffStep(state: NardiGameState, fromIndex: Int): Boolean {
     val pt = state.board[fromIndex]
     if (pt.count <= 0 || pt.player != state.turn) return false
     if (!allHome(state, pt.player)) return false
@@ -284,6 +297,11 @@ fun canBearOff(state: NardiGameState, fromIndex: Int): Boolean {
 // Выброс шашки: снять с доски, +1 к счётчику, потратить зар.
 fun bearOff(state: NardiGameState, fromIndex: Int): NardiGameState {
     if (!canBearOff(state, fromIndex)) return state
+    return bearOffStep(state, fromIndex)
+}
+
+// Механика выброса БЕЗ проверки правила максимума (для перебора в maxDiceUsable).
+private fun bearOffStep(state: NardiGameState, fromIndex: Int): NardiGameState {
     val pt = state.board[fromIndex]
     val dice = state.dice ?: return state
     val need = distToOff(pt.player, fromIndex)
@@ -323,3 +341,64 @@ fun winType(state: NardiGameState): Int {
     }
     return if (inHome == 0) 3 else 2                 // нет в доме -> кокс(3), иначе Марс(2)
 }
+
+
+// ===== R2: ОБЯЗАТЕЛЬНОСТЬ ЗАРОВ (уровень всего хода) =====
+// Игрок обязан сыграть максимально возможное число заров; если можно сыграть
+// только один из двух разных — обязан больший. Шаг легален, только если он лежит
+// на какой-то последовательности, дающей этот максимум.
+
+private fun stepDie(state: NardiGameState, from: Int, to: Int): Int {
+    if (to >= 0) return moveDistance(state.board[from].player, from, to)
+    val dice = state.dice ?: return 0
+    val need = distToOff(state.board[from].player, from)
+    return if (need in dice) need else dice.filter { it > need }.minOrNull() ?: 0
+}
+
+private fun applyStep(state: NardiGameState, from: Int, to: Int): NardiGameState =
+    if (to < 0) bearOffStep(state, from)
+    else consumeDie(applyMove(state, from, to), moveDistance(state.board[from].player, from, to))
+
+private fun rawSteps(state: NardiGameState): List<Pair<Int, Int>> {
+    val out = ArrayList<Pair<Int, Int>>()
+    if (state.dice == null) return out
+    for (f in 0..23) {
+        val p = state.board[f]
+        if (p.count <= 0 || p.player != state.turn) continue
+        for (to in 0..23) if (isLegalStep(state, f, to)) out.add(f to to)
+        if (canBearOffStep(state, f)) out.add(f to -1)
+    }
+    return out
+}
+
+fun maxDiceUsable(state: NardiGameState): Int {
+    val dice = state.dice ?: return 0
+    var best = 0
+    for ((f, to) in rawSteps(state)) {
+        val next = applyStep(state, f, to)
+        val n = 1 + (if (next.dice == null || next.turn != state.turn) 0 else maxDiceUsable(next))
+        if (n > best) best = n
+        if (best == dice.size) break
+    }
+    return best
+}
+
+private fun stepKeepsMax(state: NardiGameState, from: Int, to: Int): Boolean {
+    val dice = state.dice ?: return false
+    val max = maxDiceUsable(state)
+    val next = applyStep(state, from, to)
+    val rest = if (next.dice == null || next.turn != state.turn) 0 else maxDiceUsable(next)
+    if (1 + rest < max) return false
+    if (max == 1 && dice.size == 2 && dice[0] != dice[1]) {
+        val die = stepDie(state, from, to)
+        val bigger = dice.maxOrNull()!!
+        if (die != bigger && rawSteps(state).any { (f, t) -> stepDie(state, f, t) == bigger }) return false
+    }
+    return true
+}
+
+fun isLegalMove(state: NardiGameState, fromIndex: Int, toIndex: Int): Boolean =
+    isLegalStep(state, fromIndex, toIndex) && stepKeepsMax(state, fromIndex, toIndex)
+
+fun canBearOff(state: NardiGameState, fromIndex: Int): Boolean =
+    canBearOffStep(state, fromIndex) && stepKeepsMax(state, fromIndex, -1)
