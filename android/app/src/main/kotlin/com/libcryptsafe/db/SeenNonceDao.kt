@@ -11,6 +11,10 @@ interface SeenNonceDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(e: SeenNonceEntity): Long
 
+    // Только чтение: проверить повтор, ничего не записывая (№34).
+    @Query("SELECT EXISTS(SELECT 1 FROM seen_nonces WHERE peerId = :peerId AND nonce = :nonce)")
+    suspend fun isSeen(peerId: String, nonce: String): Boolean
+
     suspend fun markSeen(peerId: String, nonce: String): Boolean =
         insert(SeenNonceEntity(peerId = peerId, nonce = nonce)) != -1L
 

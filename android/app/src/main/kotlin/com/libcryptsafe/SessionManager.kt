@@ -114,7 +114,7 @@ object SessionManager {
         // а НЕ к факту сессии: честное повторное знакомство (собеседник переустановил) проходит.
         val authSigId = msg.optString("auth_sig", "")
         if (authSigId.isNotEmpty() &&
-            !AppDatabase.getInstance(context).seenNonceDao().markSeen(peerId, "x3dh:" + authSigId)) {
+            AppDatabase.getInstance(context).seenNonceDao().isSeen(peerId, "x3dh:" + authSigId)) {   // №34: только чтение
             SafeLogger.w("SESSION", "INITIAL_HANDSHAKE повтор (auth_sig видели) — replay, отклонено")
             return DecryptedMessage(null, "")
         }
@@ -144,6 +144,13 @@ object SessionManager {
             return DecryptedMessage(null, "")
         }
 
+        // №34: auth_sig помечаем «виденным» ТОЛЬКО после успешной расшифровки — мусор и
+        // подпорченные копии (cipher вне подписи) не оседают в базе и не «сжигают» настоящий пакет.
+        if (authSigId.isNotEmpty() &&
+            !AppDatabase.getInstance(context).seenNonceDao().markSeen(peerId, "x3dh:" + authSigId)) {
+            SafeLogger.w("SESSION", "INITIAL_HANDSHAKE повтор после расшифровки — отклонено")
+            return DecryptedMessage(null, "")
+        }
         // УСПЕХ -> удаляем OPK_priv (Forward Secrecy, Развилка 6)
         opkId?.let { dao.deleteOpkById(it) }
         // сохраняем сессию под peerId (= stableId Алисы из её ik_sign)

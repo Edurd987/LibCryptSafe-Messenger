@@ -124,6 +124,17 @@ class X3dhSecurityTest {
         assertFalse("X3DH НЕ удалён -> всё ещё дубль (откат сессии невозможен)", dao.markSeen(peer, "x3dh:old-$old"))
     }
 
+    // (i) №34: подпорченная копия (cipher изменён, подпись верна) не должна «сжечь» auth_sig
+    @Test fun i_tampered_cipher_does_not_burn_auth_sig() = runBlocking<Unit> {
+        val msg = honest("real")
+        val bad = JSONObject(msg.toString())
+        val c = unb64(bad.getString("cipher")); c[c.size - 1] = (c[c.size - 1].toInt() xor 1).toByte()
+        bad.put("cipher", b64(c))
+        assertNull("подпорченная копия должна быть отвергнута", SessionManager.handleInitialMessage(ctx, bad).content)
+        assertEquals("настоящее сообщение после подделки обязано пройти", "real",
+            SessionManager.handleInitialMessage(ctx, msg).content?.let { String(it) })
+    }
+
     // (e) фикс 1: связка с ключом, не совпадающим с ID -> инициатор вернул null
     @Test fun e_bundle_key_mismatch_rejected() = runBlocking {
         val bundle = myBundle()
