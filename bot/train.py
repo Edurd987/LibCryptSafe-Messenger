@@ -154,6 +154,7 @@ def main():
         if g % a.eval_every == 0 or g == a.games:
             wp, ppg = evaluate(net, a.eval_games, seed=12345)
             net.save(a.out)
+            net.save(str(Path(a.out).with_name(f"{Path(a.out).stem}_g{g}.bin")))   # история точек
             row = [g, round(time.time() - t0), round(wp, 1), round(ppg, 3), net.digest()]
             with open(log, "a", newline="") as f:
                 csv.writer(f).writerow(row)
