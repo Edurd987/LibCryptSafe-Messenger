@@ -92,7 +92,70 @@ object NardiOracle {
     }
 }
 
+/**
+ * ОРАКУЛ «ЛЁГКОГО» БОТА (NardiBot.kt — тот, что сейчас в APK): позиция в начале
+ * хода -> evaluateState для обеих сторон + позиция после ПОЛНОГО хода бота (как
+ * botStep в NardiBoardView: жадно по одному шагу, затем сжигание, если ходов нет).
+ * Python-копия (bot/easy_bot.py) обязана совпасть — тогда это честный соперник.
+ */
+object EasyBotOracle {
+    private fun opp(p: PlayerType) = if (p == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
+
+    fun botTurn(start: NardiGameState): NardiGameState {
+        var s = start
+        val me = s.turn
+        while (s.turn == me && s.dice != null) {
+            val m = botChooseMove(s) ?: return burnTurn(s)
+            s = botApplyMove(s, m)
+            if (s.dice != null && !hasAnyLegalMove(s)) s = burnTurn(s)
+        }
+        return s
+    }
+
+    fun dump(out: File, positions: Int, seed: Long): Int {
+        val rnd = Random(seed)
+        val lines = ArrayList<String>()
+        while (lines.size < positions) {
+            var a: Int; var c: Int
+            do { a = rnd.nextInt(6) + 1; c = rnd.nextInt(6) + 1 } while (a == c)
+            var s = initLongNardi().copy(dice = listOf(a, c), turn = if (a > c) PlayerType.WHITE else PlayerType.BLACK,
+                isOpening = false, rolledDouble = false)
+            var guard = 0
+            while (winner(s) == null && guard++ < 500 && lines.size < positions) {
+                if (s.dice == null) s = applyRoll(s, rnd.nextInt(6) + 1, rnd.nextInt(6) + 1)
+                val b = s.board.joinToString(",") { when (it.player) { PlayerType.WHITE -> it.count; PlayerType.BLACK -> -it.count; else -> 0 }.toString() }
+                val fin = botTurn(s)
+                lines.add("{\"b\":[$b],\"t\":\"${if (s.turn == PlayerType.WHITE) "W" else "B"}\",\"d\":${s.dice},\"h\":${s.headCount}," +
+                    "\"rd\":${s.rolledDouble},\"ow\":${s.bornOffWhite},\"ob\":${s.bornOffBlack}," +
+                    "\"ev\":${evaluateState(s, s.turn)},\"evo\":${evaluateState(s, opp(s.turn))},\"fin\":\"${NardiOracle.key(fin)}\"}")
+                // продолжаем партию СЛУЧАЙНЫМИ полными ходами (разнообразие позиций)
+                val fins = NardiOracle.finals(s).sorted()
+                val k = fins[rnd.nextInt(fins.size)]
+                s = fromKey(k)
+            }
+        }
+        out.parentFile?.mkdirs()
+        out.writeText(lines.take(positions).joinToString("\n") + "\n")
+        return positions
+    }
+
+    private fun fromKey(k: String): NardiGameState {
+        val parts = k.split("|")
+        val b = parts[0].split(",").map { it.toInt() }
+        return NardiGameState(
+            board = b.map { v -> PointState(kotlin.math.abs(v), if (v > 0) PlayerType.WHITE else if (v < 0) PlayerType.BLACK else PlayerType.NONE) },
+            dice = null, turn = if (parts[3] == "W") PlayerType.WHITE else PlayerType.BLACK,
+            isFirstTurn = false, isOpening = false, bornOffWhite = parts[1].toInt(), bornOffBlack = parts[2].toInt())
+    }
+}
+
 class NardiOracleTest {
+    @Test fun dump_easy_bot_oracle() {
+        val f = File("../../bot/oracle_easy.jsonl")
+        EasyBotOracle.dump(f, 1500, 20261025L)
+        assertTrue(f.readLines().size == 1500)
+    }
+
     // ./gradlew testDebugUnitTest --tests com.libcryptsafe.NardiOracleTest  (cwd = android/app)
     @Test fun dump_oracle() {
         val f = File("../../bot/oracle_long.jsonl")
