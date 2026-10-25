@@ -65,11 +65,16 @@ class GameActivity : AppCompatActivity() {
             .setCancelable(false)
             .setItems(arrayOf(
                 getString(R.string.nardi_mode_local),
-                getString(R.string.nardi_mode_bot)
+                getString(R.string.nardi_mode_bot),
+                getString(R.string.nardi_mode_bot_strong)
             )) { _, which ->
                 when (which) {
                     0 -> board.botEnabled = false                 // вдвоём
-                    1 -> { board.botEnabled = true; board.botColor = PlayerType.BLACK }
+                    1 -> { board.botEnabled = true; board.botColor = PlayerType.BLACK; board.botNet = null }
+                    2 -> { board.botEnabled = true; board.botColor = PlayerType.BLACK
+                           // сильный бот: веса из assets; не загрузились -> лёгкий (не падаем)
+                           board.botNet = try { NardiNet.load(assets.open("nardi_long.bin").readBytes()) }
+                                          catch (_: Exception) { null } }
                 }
             }
             .show()

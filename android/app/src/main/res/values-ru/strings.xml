@@ -109,7 +109,8 @@
     <string name="contact_added">Контакт добавлен</string>
     <string name="nardi_mode_title">Выберите режим</string>
     <string name="nardi_mode_local">Вдвоём</string>
-    <string name="nardi_mode_bot">Против компьютера</string>
+    <string name="nardi_mode_bot">Против компьютера (лёгкий)</string>
+    <string name="nardi_mode_bot_strong">Против компьютера (сильный)</string>
     <string name="update_required">⚠️ Сообщение новой версии приложения. Обновите приложение.</string>
     <string name="notif_channel_name">Сообщения</string>
     <string name="notif_channel_desc">Уведомления о входящих зашифрованных сообщениях.</string>

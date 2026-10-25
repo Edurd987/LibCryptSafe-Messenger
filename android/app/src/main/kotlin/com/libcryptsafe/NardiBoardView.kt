@@ -35,6 +35,11 @@ class NardiBoardView @JvmOverloads constructor(
     // ===== РЕЖИМ БОТА =====
     var botEnabled: Boolean = false               // играем против бота?
     var botColor: PlayerType = PlayerType.BLACK   // цвет бота
+    // Сильный бот (обученная сеть, NardiNet). null = лёгкий бот (NardiBot.kt).
+    var botNet: NardiNet? = null
+    private val botPlan = ArrayDeque<NardiMove>()  // план полного хода, играется по шагу
+    private var botPlanReady = false               // план на текущий ход уже посчитан
+    private var botThinking = false                // сеть думает в фоне
 
     // ===== СЕТЕВОЙ РЕЖИМ (Кирпич 6) =====
     var isOnlineMode: Boolean = false             // сетевая партия?
@@ -176,6 +181,7 @@ class NardiBoardView @JvmOverloads constructor(
     private fun botStep() {
         if (!botEnabled || state.turn != botColor || gameOver) return
         if (state.dice == null) {
+            botPlan.clear(); botPlanReady = false  // новый ход -> новый план
             if (state.isOpening) {
                 state = rollOpening(state)        // розыгрыш: после него ход мог уйти человеку
                 invalidate()
@@ -187,7 +193,25 @@ class NardiBoardView @JvmOverloads constructor(
                 if (!hasAnyLegalMove(state)) { state = burnTurn(state); invalidate(); return }
             }
         }
-        val move = botChooseMove(state)
+        // Сильный бот: план полного хода считается В ФОНЕ (перебор на дубле может быть долгим).
+        val net = botNet
+        if (net != null && !short && !botPlanReady) {
+            if (botThinking) return
+            botThinking = true
+            val snap = state
+            Thread {
+                val plan = try { net.chooseTurn(snap) } catch (_: Exception) { emptyList() }
+                botHandler.post {
+                    botThinking = false
+                    if (state == snap) { botPlan.clear(); botPlan.addAll(plan); botPlanReady = true }
+                    botStep()
+                }
+            }.start()
+            return
+        }
+        val move = nextBotMove()
+        // АУДИТ (только debug, SafeLogger): move=null при max>0 = бот пропустил возможный ход
+        SafeLogger.i("BOT_AUDIT", "bot dice=${state.dice} max=${maxDiceUsable(state)} move=${move?.from}->${move?.to}")
         if (move == null) {                       // ходов нет -> сжечь
             if (state.dice != null) state = burnTurn(state)
             invalidate(); return
@@ -215,6 +239,14 @@ class NardiBoardView @JvmOverloads constructor(
         }
         gameOver = true
         invalidate()
+    }
+
+    // Следующий шаг бота: из плана сети (проверив легальность) или жадный лёгкий бот.
+    private fun nextBotMove(): NardiMove? {
+        if (botNet == null || short) return botChooseMove(state)
+        val m = botPlan.removeFirstOrNull() ?: return null
+        val legal = if (m.to == -1) canBearOff(state, m.from) else isLegalMove(state, m.from, m.to)
+        return if (legal) m else { botPlan.clear(); botChooseMove(state) }   // страховка: план устарел
     }
 
     private fun maybeBotTurn() {
@@ -353,6 +385,7 @@ class NardiBoardView @JvmOverloads constructor(
                         val d = state.dice
                         if (isOnlineMode && d != null && d.size >= 2) onRollMade?.invoke(d[0], d[1])
                         if (isOnlineMode && !gameOver) { winBanner = null; openingMyDie = 0; openingPeerDie = 0 }   // убрать баннер розыгрыша
+                        SafeLogger.i("BOT_AUDIT", "human roll dice=${state.dice} max=${maxDiceUsable(state)}")
                         if (!engHasAnyMove(state)) state = burnTurn(state)
                     }
                 }
