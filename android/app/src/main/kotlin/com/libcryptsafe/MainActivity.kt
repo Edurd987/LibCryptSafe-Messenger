@@ -55,10 +55,14 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     private val gameManager = GameManager(this).also { GameManager.INSTANCE = it }
 
     // Persist: запомнить последний диалог (для восстановления при перезапуске)
+    // №35: под ключом Keystore (KeyStoreManager), не открытым текстом. Пишем только при смене.
+    private var lastSavedPeer: String? = null
     private fun saveLastPeerId(peerId: String) {
-        if (peerId != "UNKNOWN" && peerId.isNotEmpty()) {
-            getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
-                .edit().putString("last_peer_id", peerId).apply()
+        if (peerId != "UNKNOWN" && peerId.isNotEmpty() && peerId != lastSavedPeer) {
+            try {
+                com.libcryptsafe.db.KeyStoreManager.saveLastPeer(this, peerId)
+                lastSavedPeer = peerId
+            } catch (_: Exception) { /* Keystore недоступен — не роняем чат */ }
         }
     }
     private var isConnected = false
@@ -364,9 +368,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // Запуск приложения после разблокировки (или если блокировка выкл)
     private fun startApp() {
         // Persist: восстановить последний диалог -> loadHistory увидит непустой peer
-        val lastPeer = getSharedPreferences("libcryptsafe_secure_prefs", MODE_PRIVATE)
-            .getString("last_peer_id", "UNKNOWN") ?: "UNKNOWN"
-        if (lastPeer != "UNKNOWN") currentPeerId = lastPeer
+        val lastPeer = try { com.libcryptsafe.db.KeyStoreManager.loadLastPeer(this) } catch (_: Exception) { null }
+        if (lastPeer != null) { currentPeerId = lastPeer; lastSavedPeer = lastPeer }
         loadHistory()
         // Стабильный ID клиента (постоянный, переживает перезапуски) — пока в лог
         val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)

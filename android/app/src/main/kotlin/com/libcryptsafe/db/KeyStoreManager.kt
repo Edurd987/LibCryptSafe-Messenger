@@ -70,7 +70,40 @@ object KeyStoreManager {
         prefs.edit()
             .remove(PREF_ENC_PASSPHRASE)
             .remove(PREF_IV)
+            .remove(PREF_LAST_PEER_ENC).remove(PREF_LAST_PEER_IV).remove(PREF_LAST_PEER_LEGACY)
             .apply()
+    }
+
+    // ═══ №35: последний собеседник — под тем же ключом Keystore, что и пароль БД ═══
+    // В prefs только шифротекст + IV (AES-GCM, ключ не покидает TEE). wipeKey -> не читается.
+    private const val PREF_LAST_PEER_ENC = "last_peer_enc"
+    private const val PREF_LAST_PEER_IV = "last_peer_iv"
+    private const val PREF_LAST_PEER_LEGACY = "last_peer_id"   // старая ОТКРЫТАЯ запись (миграция)
+
+    fun saveLastPeer(context: Context, peerId: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        val enc = cipher.doFinal(peerId.toByteArray(Charsets.UTF_8))
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(PREF_LAST_PEER_ENC, Base64.encodeToString(enc, Base64.NO_WRAP))
+            .putString(PREF_LAST_PEER_IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .remove(PREF_LAST_PEER_LEGACY)
+            .commit()
+    }
+
+    // null = нет значения или оно не расшифровывается (подделка / ключ стёрт).
+    fun loadLastPeer(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val legacy = prefs.getString(PREF_LAST_PEER_LEGACY, null)
+        if (legacy != null) {                       // миграция: зашифровать и стереть открытое
+            try { saveLastPeer(context, legacy) } catch (_: Exception) { }
+            return legacy
+        }
+        val enc = prefs.getString(PREF_LAST_PEER_ENC, null) ?: return null
+        val iv = prefs.getString(PREF_LAST_PEER_IV, null) ?: return null
+        return try {
+            String(decrypt(Base64.decode(enc, Base64.NO_WRAP), Base64.decode(iv, Base64.NO_WRAP)), Charsets.UTF_8)
+        } catch (_: Exception) { null }
     }
 
     private fun getOrCreateKey(): SecretKey {
