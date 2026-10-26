@@ -1,0 +1,10 @@
+# Принятый риск (№19). Срок ignoreUntil заставит пересмотреть.
+[[IgnoredVulns]]
+id = "GHSA-7g45-4rm6-3mm3"
+ignoreUntil = 2027-01-31
+reason = "CVE-2023-2976 guava 31.1-jre: только ksp-процессор Room (сборка), не в APK"
+
+[[IgnoredVulns]]
+id = "GHSA-5mg8-w23w-74h3"
+ignoreUntil = 2027-01-31
+reason = "CVE-2020-8908 guava 31.1-jre: только ksp-процессор Room (сборка), не в APK"

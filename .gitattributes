@@ -5,3 +5,5 @@
 *.java text eol=lf
 *.gradle text eol=lf
 *.py text eol=lf
+*.lockfile text eol=lf
+*.toml text eol=lf

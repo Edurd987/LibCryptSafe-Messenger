@@ -94,3 +94,9 @@ dependencies {
     implementation 'net.zetetic:sqlcipher-android:4.5.6'
     implementation 'androidx.sqlite:sqlite:2.4.0'
 }
+
+// №19: версии всех зависимостей зафиксированы в gradle.lockfile; расхождение роняет сборку.
+// После смены зависимостей: scripts/scan_deps.sh --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
