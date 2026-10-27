@@ -144,9 +144,9 @@ abstract class AppDatabase : RoomDatabase() {
                         dbFile.copyTo(bakDb, overwrite = true)
                         if (walFile.exists()) walFile.copyTo(bakWal, overwrite = true)
                         if (shmFile.exists()) shmFile.copyTo(bakShm, overwrite = true)
-                        SafeLogger.i("DB_BACKUP", "бэкап БД создан перед миграцией")
+                        SafeLogger.i("DB_BACKUP") { "бэкап БД создан перед миграцией" }
                     } catch (e: Exception) {
-                        SafeLogger.w("DB_BACKUP", "не удалось создать бэкап: ${e.message}")
+                        SafeLogger.w("DB_BACKUP") { "не удалось создать бэкап: ${e.message}" }
                     }
                 }
 
@@ -163,13 +163,13 @@ abstract class AppDatabase : RoomDatabase() {
                     db.openHelper.writableDatabase   // ФОРСИРУЕМ открытие -> миграция идёт ЗДЕСЬ, в try
                     db
                 } catch (e: Exception) {
-                    SafeLogger.e("DB_BACKUP", "МИГРАЦИЯ УПАЛА: ${e.message} -> восстанавливаю из бэкапа")
+                    SafeLogger.e("DB_BACKUP") { "МИГРАЦИЯ УПАЛА: ${e.message} -> восстанавливаю из бэкапа" }
                     if (hadDb && bakDb.exists()) {
                         // восстановить исходную БД из .bak (перезаписать повреждённую)
                         bakDb.copyTo(dbFile, overwrite = true)
                         if (bakWal.exists()) bakWal.copyTo(walFile, overwrite = true)
                         if (bakShm.exists()) bakShm.copyTo(shmFile, overwrite = true)
-                        SafeLogger.w("DB_BACKUP", "БД восстановлена из бэкапа (миграция отменена)")
+                        SafeLogger.w("DB_BACKUP") { "БД восстановлена из бэкапа (миграция отменена)" }
                     }
                     throw e   // пробрасываем: лучше явный краш «обновление не удалось», чем тихая пустая БД
                 }

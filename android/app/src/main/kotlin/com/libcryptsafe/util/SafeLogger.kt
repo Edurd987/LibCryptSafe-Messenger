@@ -13,13 +13,15 @@ import com.libcryptsafe.BuildConfig
  *
  * ФУНДАМЕНТ ПОД КОШЕЛЁК: тот же принцип — ключи/seed НИКОГДА в лог, даже debug.
  *
- * R8 в release дополнительно ВЫРЕЖЕТ эти вызовы из байткода (proguard-rules:
- * -assumenosideeffects), так что в release-APK не останется даже строк логов.
+ * №18: сообщение — ЛЕНИВАЯ лямбда { "..." }. inline + BuildConfig.DEBUG=false ->
+ * R8 выкидывает тело целиком: в release-APK нет ни строк логов, ни их вычислений
+ * (замер: строки логов в dex = 0). Строковой перегрузки НЕТ намеренно —
+ * компилятор не даст написать неленивый лог.
  */
 object SafeLogger {
-    fun d(tag: String, msg: String) { if (BuildConfig.DEBUG) android.util.Log.d(tag, msg) }
-    fun i(tag: String, msg: String) { if (BuildConfig.DEBUG) android.util.Log.i(tag, msg) }
-    fun w(tag: String, msg: String) { if (BuildConfig.DEBUG) android.util.Log.w(tag, msg) }
+    inline fun d(tag: String, msg: () -> String) { if (BuildConfig.DEBUG) android.util.Log.d(tag, msg()) }
+    inline fun i(tag: String, msg: () -> String) { if (BuildConfig.DEBUG) android.util.Log.i(tag, msg()) }
+    inline fun w(tag: String, msg: () -> String) { if (BuildConfig.DEBUG) android.util.Log.w(tag, msg()) }
     // e тоже гейтим: e.message часто содержит пути/состояние -> утечка в release.
-    fun e(tag: String, msg: String) { if (BuildConfig.DEBUG) android.util.Log.e(tag, msg) }
+    inline fun e(tag: String, msg: () -> String) { if (BuildConfig.DEBUG) android.util.Log.e(tag, msg()) }
 }

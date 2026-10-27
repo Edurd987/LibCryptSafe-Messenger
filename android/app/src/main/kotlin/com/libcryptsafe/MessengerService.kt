@@ -89,10 +89,10 @@ class MessengerService : Service() {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
             while (true) {
                 try { com.libcryptsafe.util.DisappearingPurge.run(applicationContext) }
-                catch (e: Exception) { com.libcryptsafe.util.SafeLogger.e("PURGE", "${e.message}") }
+                catch (e: Exception) { com.libcryptsafe.util.SafeLogger.e("PURGE") { "${e.message}" } }
                 try { com.libcryptsafe.db.AppDatabase.getInstance(applicationContext).seenNonceDao()
                         .purgeChatOlderThan(System.currentTimeMillis() - com.libcryptsafe.util.ReplayWindow.RETENTION_MS) }
-                catch (e: Exception) { com.libcryptsafe.util.SafeLogger.e("PURGE", "nonce: ${e.message}") }
+                catch (e: Exception) { com.libcryptsafe.util.SafeLogger.e("PURGE") { "nonce: ${e.message}" } }
                 kotlinx.coroutines.delay(10 * 60 * 1000L)
             }
         }

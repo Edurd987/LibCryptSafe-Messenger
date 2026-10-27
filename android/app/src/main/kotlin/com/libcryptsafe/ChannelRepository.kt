@@ -50,8 +50,7 @@ class ChannelRepository(context: Context) {
             post.channelId, post.seq, post.timestamp, post.content, post.signature
         )
         if (!valid) {
-            SafeLogger.e("CHAN_SEC",
-                "ПОДДЕЛКА поста channelId=${post.channelId.take(16)}... seq=${post.seq} — ОТКЛОНЁН")
+            SafeLogger.e("CHAN_SEC") { "ПОДДЕЛКА поста channelId=${post.channelId.take(16)}... seq=${post.seq} — ОТКЛОНЁН" }
             throw SecurityException("Невалидная подпись поста в канале ${post.channelId.take(16)}...")
         }
         postDao.insert(post)   // IGNORE если seq уже есть (дубль)

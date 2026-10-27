@@ -33,7 +33,7 @@ object SessionManager {
         // ZERO TRUST: ID = stableId(IK_SIGN). Relay мог подставить свою связку целиком —
         // подпись SPK при этом честная (от ключа атакующего). Сверяем ключ с ID получателя.
         if (KeyStoreManager.stableIdFromPublicKey(ikSign) != recipientId) {
-            SafeLogger.e("SESSION", "ik_sign не соответствует ID получателя — возможна подмена ключа")
+            SafeLogger.e("SESSION") { "ik_sign не соответствует ID получателя — возможна подмена ключа" }
             return null
         }
         val spkObj = peerBundle.getJSONObject("spk")
@@ -50,7 +50,7 @@ object SessionManager {
         val signObject = PrekeyManager.buildSpkSignObject(spkPub, spkKeyId)
         val sigValid = CryptoManager.verifySignature(ikSign, signObject, spkSig)
         if (!sigValid) {
-            SafeLogger.e("SESSION", "подпись SPK не сошлась — отказ (возможна подмена)")
+            SafeLogger.e("SESSION") { "подпись SPK не сошлась — отказ (возможна подмена)" }
             return null
         }
 
@@ -115,7 +115,7 @@ object SessionManager {
         val authSigId = msg.optString("auth_sig", "")
         if (authSigId.isNotEmpty() &&
             AppDatabase.getInstance(context).seenNonceDao().isSeen(peerId, "x3dh:" + authSigId)) {   // №34: только чтение
-            SafeLogger.w("SESSION", "INITIAL_HANDSHAKE повтор (auth_sig видели) — replay, отклонено")
+            SafeLogger.w("SESSION") { "INITIAL_HANDSHAKE повтор (auth_sig видели) — replay, отклонено" }
             return DecryptedMessage(null, "")
         }
         // ZERO TRUST: подпись отправителя над (ik_a, ek_a, наш ID). Иначе любой с публичным
@@ -124,7 +124,7 @@ object SessionManager {
         val authSig = if (msg.isNull("auth_sig")) null else unb64(msg.getString("auth_sig"))
         val signed = "LCS-X3DH-v1|${msg.getString("ik_a")}|${msg.getString("ek_a")}|$myId".toByteArray(Charsets.UTF_8)
         if (authSig == null || !CryptoManager.verifySignature(ikSignA, signed, authSig)) {
-            SafeLogger.e("SESSION", "INITIAL_HANDSHAKE без валидной подписи отправителя — отклонено")
+            SafeLogger.e("SESSION") { "INITIAL_HANDSHAKE без валидной подписи отправителя — отклонено" }
             return DecryptedMessage(null, "")
         }
 
@@ -140,7 +140,7 @@ object SessionManager {
 
         // расшифровываем (GCM-tag проверяется внутри -> null при подделке)
         val plain = CryptoManager.decryptWithKey(kEnc, cipher) ?: run {
-            SafeLogger.e("SESSION", "расшифровка не удалась (tag/ключ)")
+            SafeLogger.e("SESSION") { "расшифровка не удалась (tag/ключ)" }
             return DecryptedMessage(null, "")
         }
 
@@ -148,7 +148,7 @@ object SessionManager {
         // подпорченные копии (cipher вне подписи) не оседают в базе и не «сжигают» настоящий пакет.
         if (authSigId.isNotEmpty() &&
             !AppDatabase.getInstance(context).seenNonceDao().markSeen(peerId, "x3dh:" + authSigId)) {
-            SafeLogger.w("SESSION", "INITIAL_HANDSHAKE повтор после расшифровки — отклонено")
+            SafeLogger.w("SESSION") { "INITIAL_HANDSHAKE повтор после расшифровки — отклонено" }
             return DecryptedMessage(null, "")
         }
         // УСПЕХ -> удаляем OPK_priv (Forward Secrecy, Развилка 6)
@@ -156,7 +156,7 @@ object SessionManager {
         // сохраняем сессию под peerId (= stableId Алисы из её ik_sign)
         AppDatabase.getInstance(context).sessionDao().upsert(
             SessionEntity(peerId, kEnc, r[1], System.currentTimeMillis()))
-        SafeLogger.d("SESSION", "сессия установлена с $peerId")
+        SafeLogger.d("SESSION") { "сессия установлена с $peerId" }
 
         return DecryptedMessage(plain, peerId)
     }
@@ -170,7 +170,7 @@ object SessionManager {
             ?: return null
         val cipherBytes = CryptoManager.encryptWithKey(session.kEnc, plaintext.toByteArray(Charsets.UTF_8))
             ?: return null
-        SafeLogger.d("SESSION", "encryptMessage -> $peerId (na Kenc)")
+        SafeLogger.d("SESSION") { "encryptMessage -> $peerId (na Kenc)" }
         return JSONObject().apply {
             put("type", "CHAT_ENCRYPTED")
             put("cipher", b64(cipherBytes))
@@ -197,7 +197,7 @@ object SessionManager {
         for (s in sessions) {
             val plain = CryptoManager.decryptWithKey(s.kEnc, cipher)
             if (plain != null) {
-                SafeLogger.d("SESSION", "decryptAnySession -> ${s.peerId}")
+                SafeLogger.d("SESSION") { "decryptAnySession -> ${s.peerId}" }
                 return DecryptedMessage(plain, s.peerId)
             }
         }

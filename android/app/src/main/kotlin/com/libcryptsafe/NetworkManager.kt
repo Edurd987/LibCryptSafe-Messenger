@@ -49,7 +49,7 @@ class NetworkManager(
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(ws: WebSocket, response: Response) {
-                SafeLogger.i("NET_DIAG", "onOpen: СОКЕТ ЖИВ (было попыток=$reconnectAttempts)")
+                SafeLogger.i("NET_DIAG") { "onOpen: СОКЕТ ЖИВ (было попыток=$reconnectAttempts)" }
                 isConnected = true
                 reconnectAttempts = 0
                 registerNetCallback()   // после 1-го onOpen: стартовый onAvailable игнорируется
@@ -70,9 +70,9 @@ class NetworkManager(
                     try {
                         val uploadJson = PrekeyManager.buildUploadJson(appContext, myStableId)
                         ws.send(uploadJson)
-                        SafeLogger.d("PREKEY_MGR", "связка prekeys опубликована на relay")
+                        SafeLogger.d("PREKEY_MGR") { "связка prekeys опубликована на relay" }
                     } catch (e: Exception) {
-                        SafeLogger.e("PREKEY_MGR", "публикация: ${e.message}")
+                        SafeLogger.e("PREKEY_MGR") { "публикация: ${e.message}" }
                     }
                 }
             }
@@ -117,10 +117,10 @@ class NetworkManager(
                                     put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                                 }.toString()
                                 sendJson(envelope)
-                                SafeLogger.d("X3DH_SEND", "первое сообщение отправлено -> $targetId")
+                                SafeLogger.d("X3DH_SEND") { "первое сообщение отправлено -> $targetId" }
                                 handler.onSystemMessage("✓ отправлено (X3DH) $targetId")
                             } catch (e: Exception) {
-                                SafeLogger.e("X3DH_SEND", "ошибка: ${e.message}")
+                                SafeLogger.e("X3DH_SEND") { "ошибка: ${e.message}" }
                             }
                         }
                         return
@@ -160,12 +160,12 @@ class NetworkManager(
                                     put("ik_sign", Base64.encodeToString(ik, Base64.NO_WRAP))
                                     put("sig", Base64.encodeToString(sig, Base64.NO_WRAP))
                                 }.toString())
-                            } catch (e: Exception) { SafeLogger.e("AUTH", "подпись вызова: ${e.message}") }
+                            } catch (e: Exception) { SafeLogger.e("AUTH") { "подпись вызова: ${e.message}" } }
                         }
                         return
                     }
                     if (json.getString("type") == "auth_ok" || json.getString("type") == "auth_fail") {
-                        SafeLogger.i("AUTH", json.getString("type")); return
+                        SafeLogger.i("AUTH") { json.getString("type") }; return
                     }
                     if (json.getString("type") == "relay_rcvd") {
                         synchronized(unacked) { unacked.remove(json.optString("cid")) }
@@ -217,7 +217,7 @@ class NetworkManager(
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 isConnected = false
                 handshakeDone = false
-                SafeLogger.w("NET_DIAG", "onFailure: ${t.javaClass.simpleName}: ${t.message} attempt=$reconnectAttempts")
+                SafeLogger.w("NET_DIAG") { "onFailure: ${t.javaClass.simpleName}: ${t.message} attempt=$reconnectAttempts" }
                 handler.onStatusChanged(false, reconnectAttempts)
                 scheduleReconnect()
             }
@@ -225,7 +225,7 @@ class NetworkManager(
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                 isConnected = false
                 handshakeDone = false
-                SafeLogger.w("NET_DIAG", "onClosed: code=$code reason='$reason' intentional=$intentionallyClosed")
+                SafeLogger.w("NET_DIAG") { "onClosed: code=$code reason='$reason' intentional=$intentionallyClosed" }
                 if (!intentionallyClosed) {
                     handler.onStatusChanged(false, reconnectAttempts)
                     scheduleReconnect()
@@ -270,12 +270,12 @@ class NetworkManager(
             if (outbox.size >= OUTBOX_MAX) outbox.pollFirst()
             outbox.addLast(json); outbox.size
         }
-        SafeLogger.i("OUTBOX", "queued, size=$size")
+        SafeLogger.i("OUTBOX") { "queued, size=$size" }
     }
     private fun resendUnacked(ws: WebSocket) {
         val list = synchronized(unacked) { unacked.values.toList() }
         list.forEach { ws.send(it) }
-        if (list.isNotEmpty()) SafeLogger.i("UPLINK", "resent ${list.size} unacked")
+        if (list.isNotEmpty()) SafeLogger.i("UPLINK") { "resent ${list.size} unacked" }
     }
     private fun flushOutbox(ws: WebSocket) {
         var n = 0
@@ -284,7 +284,7 @@ class NetworkManager(
             if (!ws.send(j)) { synchronized(outbox) { outbox.addFirst(j) }; break }
             n++
         }
-        if (n > 0) SafeLogger.i("OUTBOX", "flushed $n")
+        if (n > 0) SafeLogger.i("OUTBOX") { "flushed $n" }
     }
 
     // Размер неотправленного буфера сокета (байты). Растёт, если шлём быстрее сети.
@@ -301,7 +301,7 @@ class NetworkManager(
         override fun onAvailable(network: android.net.Network) {
             reconnectHandler.post {
                 if (!isConnected && !intentionallyClosed) {
-                    SafeLogger.i("NET_DIAG", "network available -> быстрый реконнект")
+                    SafeLogger.i("NET_DIAG") { "network available -> быстрый реконнект" }
                     reconnectHandler.removeCallbacksAndMessages(null)
                     reconnectAttempts = 0
                     connect()
@@ -315,7 +315,7 @@ class NetworkManager(
             appContext.getSystemService(android.net.ConnectivityManager::class.java)
                 .registerDefaultNetworkCallback(netCallback)
             netCallbackRegistered = true
-        } catch (e: Exception) { SafeLogger.e("NET_DIAG", "netCallback: ${e.message}") }
+        } catch (e: Exception) { SafeLogger.e("NET_DIAG") { "netCallback: ${e.message}" } }
     }
 
     fun disconnect() {
@@ -338,7 +338,7 @@ class NetworkManager(
         if (isConnected) return
         reconnectHandler.removeCallbacksAndMessages(null)
         val delaySec = minOf(1 shl reconnectAttempts, 16)
-        SafeLogger.i("NET_DIAG", "scheduleReconnect: жду ${delaySec}s (attempt=$reconnectAttempts)")
+        SafeLogger.i("NET_DIAG") { "scheduleReconnect: жду ${delaySec}s (attempt=$reconnectAttempts)" }
         reconnectAttempts++
         reconnectHandler.postDelayed({
             if (!isConnected && !intentionallyClosed) connect()

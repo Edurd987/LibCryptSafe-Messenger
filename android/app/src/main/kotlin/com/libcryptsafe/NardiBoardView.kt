@@ -133,7 +133,7 @@ class NardiBoardView @JvmOverloads constructor(
                 if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
                 if (engWinner(state) != null) { gameOver = true; showWinBanner() }
                 invalidate()
-            } else SafeLogger.e("NARDI_NET", "нелегальный вход с бара соперника die=$die")
+            } else SafeLogger.e("NARDI_NET") { "нелегальный вход с бара соперника die=$die" }
             return
         }
         if (to == -1) {                      // ВЫБРОС из дома (движок сам вычислит кость)
@@ -143,7 +143,7 @@ class NardiBoardView @JvmOverloads constructor(
                 else if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
                 invalidate()
             } else {
-                SafeLogger.e("NARDI_NET", "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0432\u044b\u0431\u0440\u043e\u0441 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from")
+                SafeLogger.e("NARDI_NET") { "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0432\u044b\u0431\u0440\u043e\u0441 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from" }
             }
             return
         }
@@ -154,7 +154,7 @@ class NardiBoardView @JvmOverloads constructor(
             if (engWinner(state) != null) { gameOver = true; showWinBanner() }
             invalidate()
         } else {
-            SafeLogger.e("NARDI_NET", "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0445\u043e\u0434 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from->$to")
+            SafeLogger.e("NARDI_NET") { "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0445\u043e\u0434 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from->$to" }
             // HARD STOP по маяку — нелегальный ход соперника = Data Integrity
         }
     }
@@ -211,7 +211,7 @@ class NardiBoardView @JvmOverloads constructor(
         }
         val move = nextBotMove()
         // АУДИТ (только debug, SafeLogger): move=null при max>0 = бот пропустил возможный ход
-        SafeLogger.i("BOT_AUDIT", "bot dice=${state.dice} max=${maxDiceUsable(state)} move=${move?.from}->${move?.to}")
+        SafeLogger.i("BOT_AUDIT") { "bot dice=${state.dice} max=${maxDiceUsable(state)} move=${move?.from}->${move?.to}" }
         if (move == null) {                       // ходов нет -> сжечь
             if (state.dice != null) state = burnTurn(state)
             invalidate(); return
@@ -385,7 +385,7 @@ class NardiBoardView @JvmOverloads constructor(
                         val d = state.dice
                         if (isOnlineMode && d != null && d.size >= 2) onRollMade?.invoke(d[0], d[1])
                         if (isOnlineMode && !gameOver) { winBanner = null; openingMyDie = 0; openingPeerDie = 0 }   // убрать баннер розыгрыша
-                        SafeLogger.i("BOT_AUDIT", "human roll dice=${state.dice} max=${maxDiceUsable(state)}")
+                        SafeLogger.i("BOT_AUDIT") { "human roll dice=${state.dice} max=${maxDiceUsable(state)}" }
                         if (!engHasAnyMove(state)) state = burnTurn(state)
                     }
                 }

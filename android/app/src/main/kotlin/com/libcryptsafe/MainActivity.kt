@@ -203,7 +203,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     override fun onGameStarted(peerId: String, gameId: String) {
         runOnUiThread {
             android.widget.Toast.makeText(this, "\u041f\u0430\u0440\u0442\u0438\u044f \u043d\u0430\u0447\u0430\u043b\u0430\u0441\u044c", android.widget.Toast.LENGTH_SHORT).show()
-            SafeLogger.i("GAME_MGR", "\u041f\u0430\u0440\u0442\u0438\u044f ACTIVE game=$gameId peer=$peerId")
+            SafeLogger.i("GAME_MGR") { "\u041f\u0430\u0440\u0442\u0438\u044f ACTIVE game=$gameId peer=$peerId" }
             startActivity(android.content.Intent(this, GameActivity::class.java))
         }
     }
@@ -257,7 +257,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 val repo = ChannelRepository(this@MainActivity)
                 // 1) создать канал
                 val ch = repo.createChannel("Тестовый канал")
-                if (ch == null) { SafeLogger.e("CHAN_ROOM", "[FAIL] createChannel null"); return@launch }
+                if (ch == null) { SafeLogger.e("CHAN_ROOM") { "[FAIL] createChannel null" }; return@launch }
                 // 2) написать два поста (проверка seq)
                 val p1 = repo.publishPost(ch.channelId, "Первый пост")
                 val p2 = repo.publishPost(ch.channelId, "Второй пост")
@@ -271,14 +271,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 } catch (e: SecurityException) { secOk = true }
                 // 5) проверить, что старые данные целы (миграция)
                 val contacts = db.contactDao().getAllOnce().size
-                SafeLogger.i("CHAN_ROOM",
-                    "[" + (if (posts.size == 2 && p1?.seq == 1L && p2?.seq == 2L && secOk) "SUCCESS" else "FAIL") + "]" +
+                SafeLogger.i("CHAN_ROOM") { "[" + (if (posts.size == 2 && p1?.seq == 1L && p2?.seq == 2L && secOk) "SUCCESS" else "FAIL") + "]" +
                     " channelId=" + ch.channelId.take(12) + "... posts=" + posts.size +
                     " seq1=" + p1?.seq + " seq2=" + p2?.seq + " secException=" + secOk +
-                    " oldContacts=" + contacts)
+                    " oldContacts=" + contacts }
                 repo.deleteChannel(ch.channelId)   // чистим тестовый канал
             } catch (e: Exception) {
-                SafeLogger.e("CHAN_ROOM", "[FAIL] исключение: " + e.message)
+                SafeLogger.e("CHAN_ROOM") { "[FAIL] исключение: " + e.message }
             }
         }
 
@@ -374,14 +373,14 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         // Стабильный ID клиента (постоянный, переживает перезапуски) — пока в лог
         val stableId = com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this)
         myStableId = stableId
-        SafeLogger.d("CRYPT_SAFE", "My Stable ID: $stableId")
+        SafeLogger.d("CRYPT_SAFE") { "My Stable ID: $stableId" }
         // X3DH: инициализация prekeys (идемпотентно). Использует identity-ключ
         // из KeyStore (не myPubKey!). На IO — генерация 50 ключей + TEE-подпись.
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 PrekeyManager.bootstrap(this@MainActivity)
             } catch (e: Exception) {
-                SafeLogger.e("PREKEY_MGR", "bootstrap: ${e.message}")
+                SafeLogger.e("PREKEY_MGR") { "bootstrap: ${e.message}" }
             }
         }
         // Карточка ID в хабе 'Ещё': показать + копировать
@@ -488,9 +487,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     peerId = peer, storageKey = vault.first,
                     encryptedBlob = vault.second, mediaKind = "photo"))
                 runOnUiThread { btn.text = "\uD83D\uDD12 Сохранено"; btn.isClickable = false }
-                SafeLogger.i("MEDIA_VAULT", "photo saved to vault")
+                SafeLogger.i("MEDIA_VAULT") { "photo saved to vault" }
             } catch (e: Exception) {
-                SafeLogger.e("MEDIA_VAULT", "save failed: ${e.message}")
+                SafeLogger.e("MEDIA_VAULT") { "save failed: ${e.message}" }
                 runOnUiThread { toast("не удалось сохранить") }
             }
         }
@@ -541,13 +540,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         saveBtn.setOnClickListener { saveMediaToVault(bytes, savedPeer, saveBtn) }
                         box.addView(saveBtn)
                         attachMediaDelete(box)
-                        SafeLogger.d("MEDIA_RECV", "photo shown")
+                        SafeLogger.d("MEDIA_RECV") { "photo shown" }
                         addBubbleView(box, isOwn = false)
                     } else {
                         // decode вернул null (битые/недособранные байты) — НЕ молча
                         // пустой прямоугольник (это выглядело бы как \"фото не пришло\"),
                         // а честный видимый маркер приёма.
-                        SafeLogger.w("MEDIA_RECV", "decode failed, placeholder shown")
+                        SafeLogger.w("MEDIA_RECV") { "decode failed, placeholder shown" }
                         addMessage("\uD83D\uDDBC не удалось отобразить", isOwn = false)
                     }
                 }
@@ -668,11 +667,11 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 }
                 val jpeg = compressToLimit(bitmap, limitBytes)
                 // OPSEC: без размера/peerId в логе (метаданные связи).
-                SafeLogger.i("MEDIA_UI", "photo selected, sending")
+                SafeLogger.i("MEDIA_UI") { "photo selected, sending" }
                 runOnUiThread { addMessage("\uD83D\uDCF7 \u0444\u043e\u0442\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442\u0441\u044f (${jpeg.size/1024}KB)...", isOwn = true) }
                 sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.PHOTO, jpeg)
             } catch (e: Exception) {
-                SafeLogger.e("MEDIA_UI", "photo pick error")
+                SafeLogger.e("MEDIA_UI") { "photo pick error" }
             }
         }
     }
@@ -843,7 +842,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 put("payload", payload.toString())
             }.toString()
             networkManager?.sendJson(envelope)
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) { SafeLogger.e("CHANNEL_POST") { "send failed: " + e.javaClass.simpleName } }
     }
 
     // Запросить у relay посты канала с seq>lastSeq (инкрементальная докачка).
@@ -873,7 +872,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             val bitmap = com.journeyapps.barcodescanner.BarcodeEncoder().createBitmap(matrix)
             imageView.setImageBitmap(bitmap)
         } catch (e: Exception) {
-            SafeLogger.e("CHAN_QR", "ошибка генерации QR: " + e.message)
+            SafeLogger.e("CHAN_QR") { "ошибка генерации QR: " + e.message }
         }
         val pad = (16 * resources.displayMetrics.density).toInt()
         val box = LinearLayout(this).apply {
@@ -1096,18 +1095,18 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(android.content.Intent.createChooser(send, "Отправить фото"))
-            SafeLogger.i("MEDIA_EXPORT", "photo exported out of vault")
+            SafeLogger.i("MEDIA_EXPORT") { "photo exported out of vault" }
             // ОTLOЖ. ЗАТИРАНИЕ: получатель (WhatsApp/Telegram) читает файл асинхронно,
             // мгновенно стереть нельзя (получит пустоту). Ждём 30с (чтения хватает
             // за 1-2с, запас большой), потом shred. Файл живёт СЕКУНДЫ, не до возврата
             // в приложение -> закрывает OPSEC-окно (plain-текст на диске недолго).
             lifecycleScope.launch(Dispatchers.IO) {
                 kotlinx.coroutines.delay(30_000)
-                try { secureShredFile(f); SafeLogger.i("MEDIA_EXPORT", "timed shred ${f.name}") }
-                catch (e: Exception) { SafeLogger.e("MEDIA_EXPORT", "timed shred failed: ${e.message}") }
+                try { secureShredFile(f); SafeLogger.i("MEDIA_EXPORT") { "timed shred ${f.name}" } }
+                catch (e: Exception) { SafeLogger.e("MEDIA_EXPORT") { "timed shred failed: ${e.message}" } }
             }
         } catch (e: Exception) {
-            SafeLogger.e("MEDIA_EXPORT", "export failed: ${e.message}")
+            SafeLogger.e("MEDIA_EXPORT") { "export failed: ${e.message}" }
             toast("ошибка экспорта")
         }
     }
@@ -1118,13 +1117,13 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         lifecycleScope.launch(Dispatchers.IO) {
             val dir = java.io.File(cacheDir, "export")
             val files = dir.listFiles()
-            SafeLogger.i("MEDIA_EXPORT", "cleanup: dir=${dir.absolutePath} exists=${dir.exists()} files=${files?.size ?: -1}")
+            SafeLogger.i("MEDIA_EXPORT") { "cleanup: dir=${dir.absolutePath} exists=${dir.exists()} files=${files?.size ?: -1}" }
             if (files == null) return@launch
             for (f in files) try {
                 secureShredFile(f)
-                SafeLogger.i("MEDIA_EXPORT", "shredded ${f.name}")
+                SafeLogger.i("MEDIA_EXPORT") { "shredded ${f.name}" }
             } catch (e: Exception) {
-                SafeLogger.e("MEDIA_EXPORT", "shred FAILED ${f.name}: ${e.message}")
+                SafeLogger.e("MEDIA_EXPORT") { "shred FAILED ${f.name}: ${e.message}" }
             }
         }
     }
@@ -1178,9 +1177,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             rec.prepare(); rec.start()
             voiceRecorder = rec; voiceFile = f; voiceStartMs = System.currentTimeMillis()
             toast("Запись... (тап ещё раз = стоп)")
-            SafeLogger.i("VOICE", "recording started")
+            SafeLogger.i("VOICE") { "recording started" }
         } catch (e: Exception) {
-            SafeLogger.e("VOICE", "start failed: ${e.message}"); toast("ошибка записи")
+            SafeLogger.e("VOICE") { "start failed: ${e.message}" }; toast("ошибка записи")
             voiceRecorder = null; voiceFile = null
         }
     }
@@ -1211,9 +1210,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 val bytes = f.readBytes()
                 runOnUiThread { addMessage("голосовое отправляется (${bytes.size/1024}KB)...", isOwn = true) }
                 sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.VOICE, bytes)
-                SafeLogger.i("VOICE", "voice sent")
+                SafeLogger.i("VOICE") { "voice sent" }
             } catch (e: Exception) {
-                SafeLogger.e("VOICE", "send failed: ${e.message}")
+                SafeLogger.e("VOICE") { "send failed: ${e.message}" }
             } finally {
                 secureShredFile(f)   // затереть plain-звук после отправки
                 voiceSending = false
@@ -1234,7 +1233,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
         attachMediaDelete(btn)
         addBubbleView(btn, isOwn = false)
-        SafeLogger.d("VOICE", "voice bubble shown")
+        SafeLogger.d("VOICE") { "voice bubble shown" }
     }
 
     // Вторая линия обороны: plain-звук прошлых сессий (стоп до фикса, убийство процесса
@@ -1276,9 +1275,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 }
                 mp.start()
                 voicePlayer = mp
-                SafeLogger.i("VOICE", "playing")
+                SafeLogger.i("VOICE") { "playing" }
             } catch (e: Exception) {
-                SafeLogger.e("VOICE", "play failed: ${e.message}")
+                SafeLogger.e("VOICE") { "play failed: ${e.message}" }
                 f?.let { secureShredFile(it) }
                 runOnUiThread { toast("не удалось воспроизвести") }
             }
@@ -1584,7 +1583,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             when {
                 v >= 2 -> {
                     // будущий протокол: не падаем, просим обновиться
-                    SafeLogger.w("PROTO", "unknown version v=$v — update required")
+                    SafeLogger.w("PROTO") { "unknown version v=$v — update required" }
                     addMessage(getString(R.string.update_required), isOwn = false)
                     return
                 }
@@ -1605,7 +1604,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         try {
                             if (mediaController.onIncoming(raw)) return
                         } catch (e: Exception) {
-                            SafeLogger.e("MEDIA_RECV", "media fail (chat не тронут): ${e.message}")
+                            SafeLogger.e("MEDIA_RECV") { "media fail (chat не тронут): ${e.message}" }
                         }
                     }
                     val ack = j.optString("a", "")
@@ -1615,7 +1614,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         // ANTI-REPLAY (время): старше окна -> отвергаем. Нет ts — старый формат, полагаемся на nonce.
                         val ts = j.optLong("ts", 0L)
                         if (ts > 0 && System.currentTimeMillis() - ts > com.libcryptsafe.util.ReplayWindow.MAX_AGE_MS) {
-                            SafeLogger.i("REPLAY", "stale chat ts from $peerId — отклонено"); return
+                            SafeLogger.i("REPLAY") { "stale chat ts from $peerId — отклонено" }; return
                         }
                         // ANTI-REPLAY: повтор пакета (тот же n) -> не показываем второй раз.
                         // ACK шлём ВСЕГДА: первый мог потеряться, иначе отправитель повторяет вечно.
@@ -1623,7 +1622,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                             val fresh = db.seenNonceDao().markSeen(peerId, n)
                             withContext(Dispatchers.Main) {
                                 if (fresh) handleIncoming(j.optString("t", ""), peerId)
-                                else SafeLogger.i("REPLAY", "dup chat nonce from $peerId — скрыто")
+                                else SafeLogger.i("REPLAY") { "dup chat nonce from $peerId — скрыто" }
                                 sendAck(peerId, n)
                             }
                         }
@@ -1645,7 +1644,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         nonceToViewMap[nonce]?.let { tv -> tv.text = bubbleText(tv.text.toString(), true, "DELIVERED") }
         nonceToIdMap.remove(nonce)
         nonceToViewMap.remove(nonce)
-        SafeLogger.d("ACK", "delivered nonce=${nonce.take(8)}")
+        SafeLogger.d("ACK") { "delivered nonce=${nonce.take(8)}" }
     }
 
     private fun sendAck(targetId: String, nonce: String) {
@@ -1658,7 +1657,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 put("type", "msg"); put("to", targetId); put("payload", payloadB64)
             }.toString()
             networkManager?.sendJson(envelope)
-            SafeLogger.d("ACK", "sent -> $targetId nonce=${nonce.take(8)}")
+            SafeLogger.d("ACK") { "sent -> $targetId nonce=${nonce.take(8)}" }
         }
     }
 
@@ -1745,7 +1744,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     private suspend fun sendGameEnvelopeSync(targetId: String, gameJson: String) {
         val session = db.sessionDao().getSession(targetId)
         if (session == null) {
-            SafeLogger.w("GAME_SEND", "\u043d\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u0438 \u0441 $targetId")
+            SafeLogger.w("GAME_SEND") { "\u043d\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u0438 \u0441 $targetId" }
             return
         }
         val pkt = SessionManager.encryptMessage(this@MainActivity, targetId, gameJson)
@@ -1756,7 +1755,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 put("type", "msg"); put("to", targetId); put("payload", payloadB64)
             }.toString()
             networkManager?.sendJson(envelope)
-            SafeLogger.i("GAME_SEND", "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435 -> $targetId")
+            SafeLogger.i("GAME_SEND") { "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435 -> $targetId" }
         }
     }
 
@@ -1784,9 +1783,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         lifecycleScope.launch(Dispatchers.IO) {
             val ephKey = mediaController.newEphemeralKeyForSend()   // 32B, живёт один файл
             val envelopes = mediaController.buildTransfer(kind, bytes, ephKey)
-            SafeLogger.i("MEDIA_SEND", "готовим ${envelopes.size} конвертов -> $targetId")
-            if (envelopes.size > 5) SafeLogger.w("MEDIA_SEND",
-                "ВНИМАНИЕ: ${envelopes.size} конвертов залпом — backpressure не решён, риск на большом файле")
+            SafeLogger.i("MEDIA_SEND") { "готовим ${envelopes.size} конвертов -> $targetId" }
+            if (envelopes.size > 5) SafeLogger.w("MEDIA_SEND") { "ВНИМАНИЕ: ${envelopes.size} конвертов залпом — backpressure не решён, риск на большом файле" }
             // ПОСЛЕДОВАТЕЛЬНО в ЭТОЙ корутине (не sendGameEvent — тот плодит
             // корутину на конверт -> гонка init/chunk/done, DONE обгонял чанки).
             // sendJson синхронный (OkHttp FIFO), поэтому порядок держится. delay(15)
@@ -1805,9 +1803,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 }
                 sendGameEnvelopeSync(targetId, env)
                 kotlinx.coroutines.delay(80)   // дать relay форвотнуть, не заливать
-                SafeLogger.i("MEDIA_SEND", "chunk $i/${envelopes.size} sent, queue=${networkManager?.wsQueueSize() ?: -1}")
+                SafeLogger.i("MEDIA_SEND") { "chunk $i/${envelopes.size} sent, queue=${networkManager?.wsQueueSize() ?: -1}" }
             }
-            SafeLogger.i("MEDIA_SEND", "все конверты отправлены ПО ПОРЯДКУ -> $targetId")
+            SafeLogger.i("MEDIA_SEND") { "все конверты отправлены ПО ПОРЯДКУ -> $targetId" }
         }
     }
 
@@ -1837,7 +1835,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                     }.toString()
                     networkManager?.sendJson(envelope)
-                    SafeLogger.d("X3DH_SEND", "CHAT_ENCRYPTED -> $targetId")
+                    SafeLogger.d("X3DH_SEND") { "CHAT_ENCRYPTED -> $targetId" }
                 } else {
                     runOnUiThread { addMessage("ошибка шифрования", isOwn = false) }
                 }
@@ -1848,7 +1846,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     put("type", "prekeys_request"); put("targetId", targetId)
                 }.toString()
                 networkManager?.sendJson(req)
-                SafeLogger.d("X3DH_SEND", "prekeys_request -> $targetId")
+                SafeLogger.d("X3DH_SEND") { "prekeys_request -> $targetId" }
             }
         }
     }

@@ -1,15 +1,15 @@
 # ============================================================
 # LibCryptSafe ProGuard/R8 правила.
-# СЕЙЧАС minify ВЫКЛЮЧЕН (этап A) — эти правила лежат для будущего включения.
+# minify ВКЛЮЧЁН в release (build.gradle). №18: строки логов в dex = 0 (ленивый SafeLogger).
 # ============================================================
 
 # SafeLogger: при minifyEnabled true R8 ВЫРЕЖЕТ вызовы + строки-аргументы из
 # release-байткода (метаданные peerId/пути физически исчезнут даже в дизассемблере).
 -assumenosideeffects class com.libcryptsafe.util.SafeLogger {
-    public static void d(...);
-    public static void i(...);
-    public static void w(...);
-    public static void e(...);
+    public void d(...);
+    public void i(...);
+    public void w(...);
+    public void e(...);
 }
 
 # TODO при включении minify — добавить keep-правила:
