@@ -249,39 +249,23 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         etMessage         = findViewById(R.id.et_message)
         tvStatus          = findViewById(R.id.tv_status)
 
-        db = AppDatabase.getInstance(this)
-
-        // ═══ ВРЕМЕННЫЙ тест Room-слоя каналов (СНЯТЬ после проверки) ═══
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            try {
-                val repo = ChannelRepository(this@MainActivity)
-                // 1) создать канал
-                val ch = repo.createChannel("Тестовый канал")
-                if (ch == null) { SafeLogger.e("CHAN_ROOM") { "[FAIL] createChannel null" }; return@launch }
-                // 2) написать два поста (проверка seq)
-                val p1 = repo.publishPost(ch.channelId, "Первый пост")
-                val p2 = repo.publishPost(ch.channelId, "Второй пост")
-                // 3) прочитать обратно
-                val posts = repo.getPosts(ch.channelId)
-                // 4) проверить защиту: битый пост -> SecurityException
-                var secOk = false
-                try {
-                    val bad = com.libcryptsafe.db.PostEntity(ch.channelId, 99L, System.currentTimeMillis(), "Подделка", ByteArray(70))
-                    repo.saveIncomingPost(bad)
-                } catch (e: SecurityException) { secOk = true }
-                // 5) проверить, что старые данные целы (миграция)
-                val contacts = db.contactDao().getAllOnce().size
-                SafeLogger.i("CHAN_ROOM") { "[" + (if (posts.size == 2 && p1?.seq == 1L && p2?.seq == 2L && secOk) "SUCCESS" else "FAIL") + "]" +
-                    " channelId=" + ch.channelId.take(12) + "... posts=" + posts.size +
-                    " seq1=" + p1?.seq + " seq2=" + p2?.seq + " secException=" + secOk +
-                    " oldContacts=" + contacts }
-                repo.deleteChannel(ch.channelId)   // чистим тестовый канал
-            } catch (e: Exception) {
-                SafeLogger.e("CHAN_ROOM") { "[FAIL] исключение: " + e.message }
+        // №18: БД открываем НЕ в главном потоке. getInstance() форсирует открытие SQLCipher
+        // (PBKDF2 + миграции): на слабом устройстве это секунды -> main заблокирован,
+        // MessengerService не успевает startForeground -> RemoteServiceException/ANR
+        // (поймано трассой ANR на эмуляторе: main в AppDatabase.getInstance).
+        // Всё, что трогает db, стартует только после готовности (checkAppLock -> startApp).
+        lifecycleScope.launch {
+            db = withContext(Dispatchers.IO) {
+                val d = AppDatabase.getInstance(this@MainActivity)
+                // Прогрев тяжёлой крипты тоже в фоне: EC-ключ личности в Keystore и загрузка
+                // libcryptosafe + генерация пары (замер: 4.9 с main под ARM-трансляцией).
+                // Оба вызова идемпотентны/кешируются -> в startApp() станут мгновенными.
+                com.libcryptsafe.db.KeyStoreManager.getOrCreateStableId(this@MainActivity)
+                com.libcryptsafe.util.NetIdentity.pubKey
+                d
             }
+            checkAppLock()
         }
-
-        checkAppLock()
     }
 
     // L2 Кирпич 1: запуск фонового сервиса. startForegroundService (не startService) —
