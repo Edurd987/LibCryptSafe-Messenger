@@ -24,6 +24,12 @@ DAYS=$(ssh "$RELAY" 'END=$(echo | openssl s_client -connect cryptsafe-relay.duck
 if [ "${DAYS:-0}" -ge 25 ]; then mark "сертификат relay: дней до конца $DAYS" PASS
 else mark "сертификат relay: дней до конца ${DAYS:-?}" "FAIL (автообновление не сработало?)"; fi
 
+# Автообновления ОС + продление сертификата: таймеры должны быть АКТИВНЫ.
+# 29.10.2026 нашли apt-daily* inactive (enabled, но не запущены) -> патчи копились.
+TMR=$(ssh "$RELAY" 'systemctl is-active apt-daily.timer apt-daily-upgrade.timer certbot.timer' | tr -d '\r' | tr '\n' ' ')
+if [ "$TMR" = "active active active " ]; then mark "VPS: таймеры apt-daily/upgrade/certbot" PASS
+else mark "VPS: таймеры apt-daily/upgrade/certbot" "FAIL (получено: $TMR)"; fi
+
 echo "== 1. Сборка =="
 if (cd android && ./gradlew -q assembleDebug assembleDebugAndroidTest); then mark "сборка" PASS
 else mark "сборка" FAIL; fi
