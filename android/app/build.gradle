@@ -100,3 +100,10 @@ dependencies {
 dependencyLocking {
     lockAllConfigurations()
 }
+
+// №19 (2026-10-31): guava 31.1-jre приходит только с процессором Room (KSP) и имеет 3 advisory
+// (CVE-2020-8908, CVE-2023-2976, CVE-2026-102554). Поднимаем ТОЛЬКО в ksp*-конфигурациях
+// (сборка); в APK guava нет. Убрать, когда Room/KSP сами притянут guava >= 33.7.2.
+configurations.matching { it.name.toLowerCase().contains('ksp') }.configureEach {
+    resolutionStrategy.force 'com.google.guava:guava:33.7.2-jre'
+}
