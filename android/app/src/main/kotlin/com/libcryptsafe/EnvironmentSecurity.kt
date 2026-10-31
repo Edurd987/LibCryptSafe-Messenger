@@ -88,6 +88,12 @@ object EnvironmentSecurity {
     private const val DEBUG_SIGNATURE_SHA256 =
         "4ee3f65da019d7ed59c7ca23ad50d95d067d89214ede8077f27aaae129007a88"
 
+    // №37: release-сборки подписаны боевым ключом. Отпечаток сертификата снят apksigner
+    // с app-release.apk (2026-10-31); контроль: тот же способ дал ровно DEBUG-отпечаток выше.
+    // Эталон ДОЛЖЕН быть в коде: эталон из самого APK подделка принесла бы свой.
+    private const val RELEASE_SIGNATURE_SHA256 =
+        "6c02b0acca6bf6f7e6a9b660b6759cbe680e103d5d24e1a484fa5570ab8121c0"
+
     /**
      * Проверка целостности: совпадает ли подпись с эталоном.
      * true = подпись наша, false = подмена/переподписан.
@@ -96,7 +102,8 @@ object EnvironmentSecurity {
      */
     fun isIntegrityOk(context: Context): Boolean {
         val current = getSignatureSha256(context)
-        return current.equals(DEBUG_SIGNATURE_SHA256, ignoreCase = true)
+        val expected = if (BuildConfig.DEBUG) DEBUG_SIGNATURE_SHA256 else RELEASE_SIGNATURE_SHA256
+        return current.equals(expected, ignoreCase = true)
     }
 
     /**
