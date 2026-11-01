@@ -123,12 +123,9 @@ function stableIdFromDer(der) {
     const h = crypto.createHash('sha256').update(der).digest().subarray(0, 8).toString('hex').toUpperCase()
     return h.match(/.{4}/g).join('-')
 }
-function broadcastPubkey(sock) {
-    clients.forEach(client => {
-        if (client !== sock && client.readyState === WebSocket.OPEN)
-            client.send(JSON.stringify({ type: 'pubkey', key: sock.pubKey, senderId: sock.senderId }))
-    })
-}
+// №38 (2026-11-01): broadcastPubkey УДАЛЁН. Legacy-схема рассылала ID+ключ каждого вошедшего
+// ВСЕМ онлайн (утечка списка онлайн-ID), а клиент по этому кадру молча менял адресата.
+// X3DH берёт ключи только через prekeys_request конкретного ID.
 const clients = new Set()
 // UPLINK-ACK: недавние cid (10 мин) — отбросить дубли повторной отправки, когда оригинал
 // дошёл, а потерялось подтверждение. Только в памяти, без связи с отправителем.
@@ -181,19 +178,12 @@ wss.on('connection', (socket, req) => {
     socket.on('pong', () => { socket.isAlive = true })
     ipConnections.set(ip, cur + 1)
     console.log(`[+] Connected | Total: ${clients.size}`)
-    clients.forEach(other => {
-        if (other !== socket && other.readyState === WebSocket.OPEN && other.pubKey) {
-            socket.send(JSON.stringify({ type: 'pubkey', key: other.pubKey, senderId: other.senderId }))
-        }
-    })
     socket.on('message', (data) => {
         try {
             const msg = JSON.parse(data.toString())
             if (msg.type === 'pubkey') {
-                // ID присваивается ТОЛЬКО входом по подписи. Здесь лишь запоминаем ключ;
-                // рассылка — после входа (порядок auth/pubkey на клиенте не важен).
-                socket.pubKey = msg.key
-                if (socket.authedId) broadcastPubkey(socket)
+                // №38: legacy-кадр старых клиентов. Принимаем и молча игнорируем:
+                // не храним и никому не пересылаем.
                 return
             }
             if (msg.type === 'auth') {
@@ -212,7 +202,6 @@ wss.on('connection', (socket, req) => {
                 if (!ok) { console.log('[AUTH] отказ'); socket.send(JSON.stringify({ type: 'auth_fail' })); return }
                 console.log('[AUTH] ok')
                 socket.send(JSON.stringify({ type: 'auth_ok' }))
-                if (socket.pubKey) broadcastPubkey(socket)
                 if (socket.pendingUpload) {   // публикация ключей, пришедшая до входа
                     const m = socket.pendingUpload; socket.pendingUpload = null
                     socket.emit('message', Buffer.from(JSON.stringify(m)))

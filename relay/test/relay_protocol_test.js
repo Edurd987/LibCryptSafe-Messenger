@@ -109,6 +109,17 @@ const authed = c => c.inbox.some(m => m.type === 'auth_ok')
     const idleClosed = new Promise(r => idle.ws.on('close', () => r(true)))
     check('auth: idle connection closed by timeout', await Promise.race([idleClosed, sleep(35000).then(() => false)]))
 
+    // №38: relay НЕ должен рассылать ID и ключи других клиентов (legacy broadcastPubkey).
+    // Два честных клиента входят и шлют 'pubkey'; ни один не должен получить кадр 'pubkey' вообще.
+    const p1 = await open(newIdentity()); p1.ws.send(JSON.stringify({ type: 'pubkey', key: 'AAAA' }))
+    const p2 = await open(newIdentity()); p2.ws.send(JSON.stringify({ type: 'pubkey', key: 'BBBB' }))
+    await sleep(1200)
+    const leaked = c => c.inbox.filter(m => m.type === 'pubkey').length
+    console.log(`  #38 pubkey frames: p1=${leaked(p1)} p2=${leaked(p2)}`)
+    check('privacy(#38): p1 got no foreign pubkey/ID', leaked(p1) === 0)
+    check('privacy(#38): p2 got no foreign pubkey/ID', leaked(p2) === 0)
+    ;[p1, p2].forEach(c => c.ws.close())
+
     ;[a, imp, replay, atk, own].forEach(c => c.ws.close())
     console.log(fail ? `FAILED: ${fail}` : 'ALL PASS')
     process.exit(fail ? 1 : 0)
