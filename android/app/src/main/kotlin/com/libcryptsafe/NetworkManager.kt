@@ -55,14 +55,7 @@ class NetworkManager(
                 registerNetCallback()   // после 1-го onOpen: стартовый onAvailable игнорируется
                 handler.onStatusChanged(true, reconnectAttempts)
                 handler.onSystemMessage(SysMsg.CONNECTED)
-                // Отправляем свой публичный ключ
-                myPubKey?.let { pub ->
-                    val json = JSONObject()
-                    json.put("type", "pubkey")
-                    json.put("key", Base64.encodeToString(pub, Base64.NO_WRAP))
-                    json.put("senderId", myStableId)
-                    ws.send(json.toString())
-                }
+                // №38: свой legacy-ключ 'pubkey' больше НЕ шлём (relay его не рассылает; X3DH - через prekeys).
                 flushOutbox(ws)   // после регистрации — накопленное офлайн
                 resendUnacked(ws) // неподтверждённые relay'ем (мёртвый сокет до обнаружения)
                 // X3DH: публикуем связку prekeys (публичные части)
@@ -81,17 +74,9 @@ class NetworkManager(
                 try {
                     val json = JSONObject(text)
                     if (json.getString("type") == "pubkey") {
-                        val peerPubKey = Base64.decode(json.getString("key"), Base64.NO_WRAP)
-                        val peerId = json.optString("senderId", "UNKNOWN")
-                        if (peerId.isNotEmpty() && peerId != "UNKNOWN" && peerId != myStableId) {
-                            handler.onPeerIdResolved(peerId)
-                        }
-                        val result = CryptoManager.computeSharedKey(peerPubKey)
-                        if (result == 0) {
-                            handshakeDone = true
-                            val fp = CryptoManager.getFingerprint()
-                            handler.onHandshakeDone(fp)
-                        }
+                        // №38: legacy-кадр игнорируем ЦЕЛИКОМ. Раньше он молча менял адресата
+                        // (onPeerIdResolved -> currentPeerId). Relay недоверенный: такой кадр
+                        // может прислать и взломанный relay - реагировать нельзя.
                         return
                     }
                     // X3DH: ответ со связкой -> собрать первое сообщение

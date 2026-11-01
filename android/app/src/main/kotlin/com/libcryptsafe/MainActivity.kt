@@ -123,7 +123,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         isConnected = connected          // зеркало для панели Сеть
         reconnectAttempts = reconnects
         runOnUiThread {
-            tvStatus.text = if (connected) getString(R.string.waiting_companion)
+            tvStatus.text = if (connected) getString(R.string.status_connected)
                             else getString(R.string.reconnecting)
             GameActivity.CURRENT?.onConnectionChanged(connected)
         }
@@ -147,23 +147,21 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         runOnUiThread { addMessage(resolved, isOwn = false) }
     }
     override fun onPeerIdResolved(peerId: String) {
-        currentPeerId = peerId
-        saveLastPeerId(peerId)
+        // №38: адресата меняет ТОЛЬКО пользователь (нажатие на контакт). Сеть - никогда.
     }
     override fun onChatReceived(peerId: String, rawDecrypted: String) {
         runOnUiThread {
             // Активный чат меняем ТОЛЬКО если он ещё не выбран (первый контакт).
             // Иначе входящее от Боба НЕ угонит открытый чат Алисы: сообщение
             // сохранится под своим пиром (handleDecrypted), notifyIncoming предупредит.
-            if (currentPeerId == "UNKNOWN") currentPeerId = peerId
-            saveLastPeerId(peerId)
+            // №38: входящее не меняет ни открытый, ни сохранённый чат - только если чат не выбран вообще
+            if (currentPeerId == "UNKNOWN") { currentPeerId = peerId; saveLastPeerId(peerId) }
             handleDecrypted(peerId, rawDecrypted)
         }
     }
     override fun onInitialHandshakeReceived(peerId: String, content: String) {
         runOnUiThread {
-            if (currentPeerId == "UNKNOWN") currentPeerId = peerId
-            saveLastPeerId(peerId)
+            if (currentPeerId == "UNKNOWN") { currentPeerId = peerId; saveLastPeerId(peerId) }   // №38
             handleIncoming(content, peerId)
         }
     }
@@ -1549,7 +1547,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         findViewById<TextView>(R.id.net_status).text =
             getString(R.string.net_status, if (isConnected) getString(R.string.net_status_on) else getString(R.string.net_status_off))
         findViewById<TextView>(R.id.net_e2ee).text =
-            getString(R.string.net_e2ee, if (handshakeDone) getString(R.string.e2ee_on) else getString(R.string.e2ee_waiting))
+            getString(R.string.net_e2ee, getString(R.string.e2ee_on))   // №38: E2EE = X3DH по каждому контакту, не legacy-рукопожатие
         findViewById<TextView>(R.id.net_cipher).text =
             getString(R.string.net_cipher)
         findViewById<TextView>(R.id.net_fingerprint).text =
