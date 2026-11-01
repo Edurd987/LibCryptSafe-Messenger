@@ -22,6 +22,8 @@
 - unattended-upgrades (с 26.10.2026): только security, Automatic-Reboot выкл.
   Таймеры apt-daily + apt-daily-upgrade: были INACTIVE до 29.10.2026 (патчи копились),
   включены enable --now; контроль: scripts/run_security_tests.sh (VPS: таймеры)
+- CVE-2026-98432 (с 2026-11-01): в /etc/ufw/before.rules (ufw-before-input) DROP TCP SYN с IP-опциями;
+  бэкап /root/before.rules.bak-98432; ждём ядро от Ubuntu, перезагрузка ВРУЧНУЮ (SECURITY_AUDIT №39)
 
 ## RELAY КАК СЕРВИС
 Сервис: libcryptsafe-relay-443 (User=libcrypt, non-root)

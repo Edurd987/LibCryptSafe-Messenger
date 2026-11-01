@@ -30,6 +30,11 @@ TMR=$(ssh "$RELAY" 'systemctl is-active apt-daily.timer apt-daily-upgrade.timer 
 if [ "$TMR" = "active active active " ]; then mark "VPS: таймеры apt-daily/upgrade/certbot" PASS
 else mark "VPS: таймеры apt-daily/upgrade/certbot" "FAIL (получено: $TMR)"; fi
 
+# CVE-2026-98432: временное правило ufw (DROP SYN с IP-опциями) должно быть на месте до патча ядра.
+R39=$(ssh "$RELAY" 'iptables -S ufw-before-input | grep -c "0x0>>0x18&0xf=0x5"' | tr -d '\r')
+if [ "${R39:-0}" -ge 1 ]; then mark "VPS: правило CVE-2026-98432 в ufw" PASS
+else mark "VPS: правило CVE-2026-98432 в ufw" "FAIL (правил: ${R39:-?})"; fi
+
 echo "== 1. Сборка =="
 if (cd android && ./gradlew -q assembleDebug assembleDebugAndroidTest); then mark "сборка" PASS
 else mark "сборка" FAIL; fi
