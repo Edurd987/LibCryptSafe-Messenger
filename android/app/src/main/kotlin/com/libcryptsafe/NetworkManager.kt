@@ -39,7 +39,10 @@ class NetworkManager(
 
     private val pendingMessages = mutableMapOf<String, String>()
     private val reconnectHandler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // №43: любой необработанный сбой в корутинах сети -> лог, а не смерть процесса.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO +
+        kotlinx.coroutines.CoroutineExceptionHandler { _, t ->
+            SafeLogger.e("NET") { "корутина: ${t.javaClass.simpleName}" } })
 
     fun connect() {
         intentionallyClosed = false
@@ -171,8 +174,10 @@ class NetworkManager(
                             val inner = JSONObject(String(cipherBytes, Charsets.UTF_8))
                             if (inner.optString("type") == "INITIAL_HANDSHAKE") {
                                 scope.launch {
-                                    val result = SessionManager.handleInitialMessage(appContext, inner)
-                                    if (result.content != null) {
+                                    val result = try { SessionManager.handleInitialMessage(appContext, inner) }
+                                        catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e }
+                                        catch (t: Throwable) { SafeLogger.w("X3DH_RECV") { "битый INITIAL_HANDSHAKE: ${t.javaClass.simpleName}" }; null }
+                                    if (result?.content != null) {
                                         handler.onInitialHandshakeReceived(
                                             result.peerId, String(result.content, Charsets.UTF_8))
                                     } else {
@@ -184,7 +189,9 @@ class NetworkManager(
                             if (inner.optString("type") == "CHAT_ENCRYPTED") {
                                 val cipherStr = inner.optString("cipher", "")
                                 scope.launch {
-                                    val result = SessionManager.decryptAnySession(appContext, cipherStr)
+                                    val result = try { SessionManager.decryptAnySession(appContext, cipherStr) }
+                                        catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e }
+                                        catch (t: Throwable) { SafeLogger.w("CHAT_RECV") { "битый CHAT_ENCRYPTED: ${t.javaClass.simpleName}" }; null }
                                     if (result?.content != null) {
                                         handler.onChatReceived(
                                             result.peerId, String(result.content, Charsets.UTF_8))
@@ -196,7 +203,7 @@ class NetworkManager(
                             }
                         } catch (_: Exception) { /* не наш JSON */ }
                     }
-                } catch (e: Exception) { /* не JSON */ }
+                } catch (t: Throwable) { /* №43: битый кадр -> игнор, не падение */ }
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
