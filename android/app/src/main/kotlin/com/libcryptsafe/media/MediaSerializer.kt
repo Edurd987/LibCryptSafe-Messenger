@@ -94,6 +94,7 @@ class MediaSerializer(private val b64: Base64Codec) {
             ephemeralKey = ByteArray(0)   // расшифрованный ключ не тут; ephKey отдельно
         )
         val ephEnc = b64.decode(json.getString("ephKey"))
+        require(ephEnc.size == 32) { "ephKey must be 32 bytes" }   // №40: чужая длина -> INIT отвергнут
         Pair(init, ephEnc)
     } catch (e: Exception) { null }
 

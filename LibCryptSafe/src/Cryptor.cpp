@@ -6,7 +6,11 @@
 
 namespace LibCryptSafe {
 
-Cryptor::Cryptor(const std::vector<uint8_t>& key) : key_(key) {}
+// №40: AES-256 читает РОВНО 32 байта ключа. Короче -> OpenSSL читал чужую память кучи
+// (valgrind: Invalid read of size 16 в EVP_CipherInit_ex при ключе 1 байт).
+Cryptor::Cryptor(const std::vector<uint8_t>& key) : key_(key) {
+    if (key_.size() != 32) throw std::invalid_argument("AES-256-GCM key must be 32 bytes");
+}
 Cryptor::~Cryptor() {}
 
 // Формат вывода: [12 байт nonce][ciphertext][16 байт tag]

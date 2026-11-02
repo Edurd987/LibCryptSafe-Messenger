@@ -53,7 +53,9 @@ int main() {
     // === АТАКА 4: чужой ключ не расшифровывает ===
     printf("\n=== АТАКА 4: расшифровка чужим ключом ===\n");
     KeyExchange RANDOM;
-    LibCryptSafe::Cryptor cEve(RANDOM.export_public_key());  // случайный ключ (91б обрежется? нет - нужен 32)
+    bool badlen = false;   // №40: ключ не 32 байта (здесь 91) обязан отвергаться, а не читаться за границей
+    try { LibCryptSafe::Cryptor cEve(RANDOM.export_public_key()); } catch(...) { badlen = true; }
+    check(badlen, "ключ не 32 байта отвергнут (№40)");
     // берём честный 32-байтный чужой ключ
     std::vector<uint8_t> wrongKey(32, 0xAB);
     LibCryptSafe::Cryptor cWrong(wrongKey);
