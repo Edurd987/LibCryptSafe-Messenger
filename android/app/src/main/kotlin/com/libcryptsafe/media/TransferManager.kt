@@ -22,10 +22,16 @@ package com.libcryptsafe.media
  * должна подавать onInit/onChunk/onDone для одного transferId последовательно
  * (например, с одного корутин-диспетчера). Маяк для сетевого кирпича.
  */
-class TransferManager {
+class TransferManager(private val now: () -> Long = System::currentTimeMillis) {
+
+    companion object {
+        const val MAX_ACTIVE = 16                         // одновременных входящих передач
+        const val MAX_RESERVED = MediaLimits.MAX_TRANSFER // сумма totalBytes активных передач
+        const val TTL_MS = 10L * 60 * 1000                // INIT без DONE живёт 10 минут
+    }
 
     /** Состояние одной идущей передачи: её INIT + накопленные чанки. */
-    private class TransferState(val init: MediaInit) {
+    private class TransferState(val init: MediaInit, val createdAt: Long) {
         // Неупорядоченная сборка: seq -> байты. Файловые чанки независимы
         // (в отличие от nardi seq, где пропуск ДОЛЖЕН блокировать — там ходы
         // причинны). Поэтому просто копим что пришло, полноту проверяем на DONE.
@@ -37,16 +43,30 @@ class TransferManager {
     /** MEDIA_INIT: завести приёмную корзину. Возвращает false, если файл
      *  больше лимита (100MB) — такую передачу не принимаем. */
     fun onInit(init: MediaInit): Boolean {
-        if (init.totalBytes > MediaLimits.MAX_TRANSFER) return false
-        states[init.transferId] = TransferState(init)
+        // №41: INIT шлёт контакт — он может быть злонамеренным. Всё проверяем.
+        if (init.totalBytes < 0 || init.totalBytes > MediaLimits.MAX_TRANSFER) return false
+        if (init.chunkSize < 1 || init.chunkSize > MediaLimits.CHUNK_SIZE) return false
+        val expected = (init.totalBytes + init.chunkSize - 1) / init.chunkSize
+        if (init.totalChunks.toLong() != expected) return false   // иначе missing() крутит до 2^31
+        if (states.containsKey(init.transferId)) return false     // повторный INIT не сбрасывает корзину
+        val t = now()
+        states.values.removeAll { t - it.createdAt > TTL_MS }     // INIT без DONE не держит слот вечно
+        if (states.size >= MAX_ACTIVE) return false
+        if (states.values.sumOf { it.init.totalBytes } + init.totalBytes > MAX_RESERVED) return false
+        states[init.transferId] = TransferState(init, t)
         return true
     }
+
+    /** Идёт ли сейчас такая передача (принят INIT, не forget/не истёк). */
+    fun isActive(id: TransferId): Boolean = states.containsKey(id)
 
     /** MEDIA_CHUNK: положить кусок в корзину. Идемпотентно — дубль seq
      *  игнорируется (пере-присылки при доборе не портят состояние).
      *  Чанк до INIT игнорируется. */
     fun onChunk(chunk: MediaChunk) {
         val st = states[chunk.transferId] ?: return
+        if (chunk.seq < 0 || chunk.seq >= st.init.totalChunks) return   // №41: seq вне диапазона
+        if (chunk.bytes.size > st.init.chunkSize) return                 // №41: чанк больше заявленного
         if (st.chunks.containsKey(chunk.seq)) return
         st.chunks[chunk.seq] = chunk.bytes
     }
@@ -74,6 +94,10 @@ class TransferManager {
         val file = out.toByteArray()
         return if (file.size.toLong() == st.init.totalBytes) file else null
     }
+
+    /** Сколько байт чанков сейчас буферизовано для передачи (для тестов/диагностики). */
+    fun bufferedBytes(id: TransferId): Long =
+        states[id]?.chunks?.values?.sumOf { it.size.toLong() } ?: 0L
 
     /** Освободить память после завершённой (или отменённой) передачи. */
     fun forget(id: TransferId) {

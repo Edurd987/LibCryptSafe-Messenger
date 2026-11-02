@@ -139,7 +139,14 @@ class MediaController(
             ContentType.MEDIA_INIT -> {
                 val parsed = serializer.parseInit(json) ?: return true
                 val (init, ephKeyPlain) = parsed   // ephKey открытый (конверт уже расшифрован сессионным)
-                assembler.onInit(init)
+                if (!assembler.onInit(init)) {   // №41: отказ = никаких следов передачи
+                    SafeLogger.w("MEDIA_RECV") { "INIT отвергнут (лимиты)" }
+                    return true
+                }
+                // подчистить ключи передач, которые сборщик уже выкинул по TTL
+                ephKeys.keys.retainAll { assembler.isActive(it) }
+                kinds.keys.retainAll { assembler.isActive(it) }
+                doneSeen.retainAll { assembler.isActive(it) }
                 ephKeys[init.transferId] = ephKeyPlain
                 kinds[init.transferId] = init.mediaKind
                 SafeLogger.i("MEDIA_RECV") { "INIT: ${init.totalChunks} чанков ждём" }
@@ -163,6 +170,7 @@ class MediaController(
             }
             ContentType.MEDIA_DONE -> {
                 val done = serializer.parseDone(json) ?: return true
+                if (!assembler.isActive(done.transferId)) return true   // №41: DONE без INIT не копим
                 doneSeen.add(done.transferId)   // запомнить: финал разрешён, как только корзина полна
                 if (!tryFinalize(done.transferId)) {
                     val miss = assembler.missing(done.transferId)
