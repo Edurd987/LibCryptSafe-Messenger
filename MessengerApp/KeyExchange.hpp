@@ -10,6 +10,7 @@
 #include <string>
 #include <stdexcept>
 #include <memory>
+#include <cstring>
 
 namespace Crypto {
 
@@ -64,10 +65,7 @@ public:
     // ── ECDH → 32-байтный AES ключ ──
     std::vector<uint8_t> compute_shared_key(
             const std::vector<uint8_t>& peer_pub_der) const {
-        const uint8_t* ptr = peer_pub_der.data();
-        auto peer = UniqPkey(
-            d2i_PUBKEY(nullptr, &ptr,
-                       static_cast<long>(peer_pub_der.size())));
+        auto peer = parse_peer_p256(peer_pub_der);   // №44
         if (!peer) throw std::runtime_error("Failed to parse peer public key");
 
         auto ctx = UniqCtx(EVP_PKEY_CTX_new(pkey_.get(), nullptr));
@@ -98,10 +96,7 @@ public:
     // handshake. X3DH требует СЫРЫЕ DH1..DH4 для конкатенации в IKM.
     std::vector<uint8_t> compute_raw_dh(
             const std::vector<uint8_t>& peer_pub_der) const {
-        const uint8_t* ptr = peer_pub_der.data();
-        auto peer = UniqPkey(
-            d2i_PUBKEY(nullptr, &ptr,
-                       static_cast<long>(peer_pub_der.size())));
+        auto peer = parse_peer_p256(peer_pub_der);   // №44
         if (!peer) throw std::runtime_error("compute_raw_dh: bad peer key");
 
         auto ctx = UniqCtx(EVP_PKEY_CTX_new(pkey_.get(), nullptr));
@@ -208,9 +203,7 @@ public:
             const std::vector<uint8_t>& data,        // что подписывали
             const std::vector<uint8_t>& sig_der) {   // подпись в DER
 
-        const uint8_t* ptr = pub_der.data();
-        auto pub = UniqPkey(
-            d2i_PUBKEY(nullptr, &ptr, static_cast<long>(pub_der.size())));
+        auto pub = parse_peer_p256(pub_der);   // №44: только P-256 named, 91 байт
         if (!pub) return false;   // не распарсили ключ -> не верим
 
         auto md_ctx = UniqMdCtx(EVP_MD_CTX_new());
@@ -378,6 +371,25 @@ private:
     using UniqMdCtx = std::unique_ptr<EVP_MD_CTX, MdCtxDeleter>;
     using UniqPkey = std::unique_ptr<EVP_PKEY,     PkeyDeleter>;
     using UniqCtx  = std::unique_ptr<EVP_PKEY_CTX, CtxDeleter>;
+
+    // №44: ЧУЖОЙ публичный ключ приходит от незнакомца ДО любых проверок.
+    // Принимаем ровно одну форму: SubjectPublicKeyInfo P-256, именованная кривая
+    // (OID prime256v1), несжатая точка = 91 байт с фиксированным 27-байтовым префиксом.
+    // RSA/DSA/другие кривые/ЯВНЫЕ параметры (класс CVE-2022-0778)/мусор в хвосте
+    // отсекаются ДО общего ASN.1-разбора OpenSSL. Свои приватные ключи не трогаем.
+    static UniqPkey parse_peer_p256(const std::vector<uint8_t>& der) {
+        static const uint8_t PFX[27] = {
+            0x30,0x59,0x30,0x13,0x06,0x07,0x2a,0x86,0x48,0xce,0x3d,0x02,0x01,
+            0x06,0x08,0x2a,0x86,0x48,0xce,0x3d,0x03,0x01,0x07,0x03,0x42,0x00,0x04 };
+        if (der.size() != 91 || std::memcmp(der.data(), PFX, sizeof(PFX)) != 0)
+            return UniqPkey(nullptr);
+        const uint8_t* ptr = der.data();
+        UniqPkey k(d2i_PUBKEY(nullptr, &ptr, 91));
+        if (!k || ptr != der.data() + 91) return UniqPkey(nullptr);
+        if (EVP_PKEY_get_base_id(k.get()) != EVP_PKEY_EC || EVP_PKEY_get_bits(k.get()) != 256)
+            return UniqPkey(nullptr);
+        return k;
+    }
     UniqPkey pkey_;
 };
 
