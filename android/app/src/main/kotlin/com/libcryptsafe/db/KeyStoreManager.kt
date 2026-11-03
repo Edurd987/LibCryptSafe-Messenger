@@ -91,6 +91,13 @@ object KeyStoreManager {
             .commit()
     }
 
+    // Забыть последнего собеседника (контакт удалён). Ключ Keystore не трогаем.
+    fun clearLastPeer(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .remove(PREF_LAST_PEER_ENC).remove(PREF_LAST_PEER_IV).remove(PREF_LAST_PEER_LEGACY)
+            .commit()
+    }
+
     // null = нет значения или оно не расшифровывается (подделка / ключ стёрт).
     fun loadLastPeer(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

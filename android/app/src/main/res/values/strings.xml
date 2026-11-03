@@ -86,6 +86,12 @@
     <string name="channel_delete_sub">Delete this channel? Posts will be removed from this device.</string>
     <string name="channel_delete_owned">This is YOUR channel. Without a key backup you will NOT be able to publish to it again. Delete?</string>
     <string name="channel_delete_ok">Delete</string>
+    <string name="contact_delete_title">Delete contact</string>
+    <string name="contact_delete_msg">Remove this contact from your address book? The encryption session is kept: if you add them again, the conversation continues.</string>
+    <string name="contact_delete_keep">Keep history</string>
+    <string name="contact_delete_all">Delete with history</string>
+    <string name="contact_deleted_keep">Contact removed, history kept</string>
+    <string name="contact_deleted_all">Contact and history deleted</string>
     <string name="channel_subscribe">+ Subscribe</string>
     <string name="channel_sub_title">Subscribe to a channel</string>
     <string name="channel_id_hint">Channel ID</string>

@@ -85,6 +85,12 @@
     <string name="channel_delete_sub">Удалить этот канал? Посты будут удалены с этого устройства.</string>
     <string name="channel_delete_owned">Это ВАШ канал. Без бэкапа ключа вы БОЛЬШЕ НЕ сможете публиковать в нём. Удалить?</string>
     <string name="channel_delete_ok">Удалить</string>
+    <string name="contact_delete_title">Удалить контакт</string>
+    <string name="contact_delete_msg">Убрать контакт из адресной книги? Сессия шифрования сохранится: если добавить его снова, переписка продолжится.</string>
+    <string name="contact_delete_keep">Оставить переписку</string>
+    <string name="contact_delete_all">Удалить с перепиской</string>
+    <string name="contact_deleted_keep">Контакт удалён, переписка сохранена</string>
+    <string name="contact_deleted_all">Контакт и переписка удалены</string>
     <string name="channel_subscribe">+ Подписаться</string>
     <string name="channel_sub_title">Подписка на канал</string>
     <string name="channel_id_hint">ID канала</string>

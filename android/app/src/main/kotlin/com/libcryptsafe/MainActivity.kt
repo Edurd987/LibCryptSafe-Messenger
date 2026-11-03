@@ -1002,8 +1002,41 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     loadHistory()                                // загрузить переписку этого контакта
                     findViewById<TextView>(R.id.tab_chat).performClick()  // перейти на вкладку Чат
                 }
+                // Удаление: долгое нажатие -> выбор (как у каналов). Сессию ключей НЕ трогаем.
+                row.setOnLongClickListener { confirmDeleteContact(c); true }
                 list.addView(row)
             }
+        }
+    }
+
+    // Удаление контакта. Сессия ключей СОХРАНЯЕТСЯ: собеседник продолжит писать по ней
+    // (иначе его сообщения стали бы «ошибкой расшифровки»), а при повторном добавлении
+    // переписка продолжится без нового X3DH.
+    private fun confirmDeleteContact(c: com.libcryptsafe.db.ContactEntity) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.contact_delete_title) + ": " + c.name)
+            .setMessage(getString(R.string.contact_delete_msg))
+            .setPositiveButton(getString(R.string.contact_delete_all)) { _, _ -> deleteContact(c, wipeHistory = true) }
+            .setNeutralButton(getString(R.string.contact_delete_keep)) { _, _ -> deleteContact(c, wipeHistory = false) }
+            .setNegativeButton(getString(R.string.channel_cancel), null)
+            .show()
+    }
+
+    private fun deleteContact(c: com.libcryptsafe.db.ContactEntity, wipeHistory: Boolean) {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                db.contactDao().delete(c)
+                if (wipeHistory) db.messageDao().clearDialog(c.contactId)
+            }
+            // Открыт чат удалённого -> закрыть его и забыть «последнего собеседника»,
+            // иначе после перезапуска приложение снова откроет этот чат.
+            if (currentPeerId == c.contactId) {
+                currentPeerId = "UNKNOWN"; lastSavedPeer = null
+                try { com.libcryptsafe.db.KeyStoreManager.clearLastPeer(this@MainActivity) } catch (_: Exception) { }
+                loadHistory()
+            }
+            refreshContacts()
+            toast(getString(if (wipeHistory) R.string.contact_deleted_all else R.string.contact_deleted_keep))
         }
     }
 
