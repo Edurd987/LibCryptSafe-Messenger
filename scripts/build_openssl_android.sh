@@ -9,7 +9,8 @@ OPENSSL_VERSION="${OPENSSL_VERSION:-3.5.9}"
 OPENSSL_SHA256="${OPENSSL_SHA256:-603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a}"
 # Отпечаток ОСНОВНОГО ключа подписи релизов (openssl.org/source). Подпись делает его подключ.
 OPENSSL_PGP_FPR="${OPENSSL_PGP_FPR:-B146647E45A7B33947AB226B2A2C87D161692D40}"
-OPENSSL_PUBKEYS_URL="${OPENSSL_PUBKEYS_URL:-https://www.openssl.org/source/pubkeys.asc}"
+# Канонический источник ключей (указан в самом pubkeys.asc): openssl-library.org/source
+OPENSSL_PUBKEYS_URL="${OPENSSL_PUBKEYS_URL:-https://openssl-library.org/source/pubkeys.asc}"
 ANDROID_API="${ANDROID_API:-26}"                 # = minSdk в app/build.gradle
 TARGET="${TARGET:-android-arm64}"               # host-режим (linux-x86_64) — только для проверки детерминизма
 SKIP_PGP="${SKIP_PGP:-0}"                        # 1 — только для локальной проверки без доступа к ключу
