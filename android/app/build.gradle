@@ -7,6 +7,7 @@ plugins {
 android {
     namespace 'com.libcryptsafe'
     compileSdk 34
+    ndkVersion "25.1.8937393"   // №44: = NDK сборки OpenSSL в CI (build-openssl.yml)
 
     buildFeatures {
         buildConfig true   // AGP генерит BuildConfig.DEBUG (true в debug, false в release)

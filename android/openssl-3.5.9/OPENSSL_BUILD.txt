@@ -1,0 +1,9 @@
+openssl_version=3.5.9
+tarball_sha256=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
+pgp_primary_fpr=B146647E45A7B33947AB226B2A2C87D161692D40
+target=android-arm64
+android_api=26
+ndk=25.1.8937393
+configure=no-shared no-tests no-docs no-apps no-module -ffile-prefix-map=/tmp/lcs-openssl-build/openssl-3.5.9=openssl-3.5.9
+source_date_epoch=1790640000
+libcrypto_a_sha256=a4120f632707ed0d8c943f2dbed6e3d0165f4b1eeb1928943ed1760c29484301

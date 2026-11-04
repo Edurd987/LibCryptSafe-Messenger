@@ -1,6 +1,7 @@
 build/
 *.exe
 *.a
+!android/openssl-3.5.9/arm64-v8a/libcrypto.a
 *.o
 *_log.txt
 .gradle/
