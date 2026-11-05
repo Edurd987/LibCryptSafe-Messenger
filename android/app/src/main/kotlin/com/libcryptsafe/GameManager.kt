@@ -252,9 +252,12 @@ class GameManager(private val callback: GameCallback) {
         if (owner != peerColor.name) { SafeLogger.i("GAME_SEQ") { "<- ALIEN owner=$owner игнор" }; return }
         val seq = json.optInt("seq", -1)
         if (seq < 0) return
+        // Защита памяти: событие слишком далеко впереди — соперник шлёт мусор.
+        if (seq > expectedSeq + MAX_BUFFERED) { SafeLogger.w("GAME_SEQ") { "<- DROP seq=$seq (ждём $expectedSeq)" }; return }
         when {
             seq < expectedSeq -> SafeLogger.i("GAME_SEQ") { "<- DUP seq=$seq (ждём $expectedSeq) игнор" }
             seq > expectedSeq -> {
+                if (eventBuffer.any { it.first == seq }) return   // дубль раннего события — уже лежит
                 eventBuffer.add(seq to json)
                 SafeLogger.i("GAME_SEQ") { "<- BUFFER seq=$seq (ждём $expectedSeq)" }
             }
@@ -271,12 +274,16 @@ class GameManager(private val callback: GameCallback) {
         when (json.optString("type", "")) {
             "GAME_ROLL" -> {
                 val a = json.optInt("a", 0); val b = json.optInt("b", 0)
-                if (a >= 1 && b >= 1) { SafeLogger.i("GAME_SEQ") { "<- ROLL seq=${json.optInt("seq")} $a,$b" }; callback.onRemoteRoll(a, b) }
+                if (a in 1..6 && b in 1..6) { SafeLogger.i("GAME_SEQ") { "<- ROLL seq=${json.optInt("seq")} $a,$b" }; callback.onRemoteRoll(a, b) }
             }
             "GAME_MOVE" -> {
                 val from = json.optInt("from", -1); val to = json.optInt("to", -1)
                 val die = json.optInt("die", -1)
-                if ((from >= 0 || from == -1) && (to >= 0 || to == -1)) { SafeLogger.i("GAME_SEQ") { "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to" }; callback.onRemoteMove(from, to, die) }
+                // Пункты 0..23; -1 = вход с бара (from) или выброс (to), не оба сразу.
+                // Выброс шлёт die=-1 (кость считает движок), остальные ходы — die 1..6.
+                val posOk = from in -1..23 && to in -1..23 && !(from == -1 && to == -1)
+                val dieOk = if (to == -1) die == -1 else die in 1..6
+                if (posOk && dieOk) { SafeLogger.i("GAME_SEQ") { "<- MOVE seq=${json.optInt("seq")} die=$die $from->$to" }; callback.onRemoteMove(from, to, die) }
             }
         }
     }
@@ -298,8 +305,12 @@ class GameManager(private val callback: GameCallback) {
         outgoingSeq = 0; expectedSeq = 0; eventBuffer.clear()
     }
 
+    /** Сколько ранних (seq > ожидаемого) событий соперника лежит в буфере. */
+    internal fun bufferedEventCount(): Int = eventBuffer.size
+
     companion object {
         @Volatile var INSTANCE: GameManager? = null
+        const val MAX_BUFFERED = 64   // окно ранних событий; дальше — дроп (защита памяти)
     }
 }
 
