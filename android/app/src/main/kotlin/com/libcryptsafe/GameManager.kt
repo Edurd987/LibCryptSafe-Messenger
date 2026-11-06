@@ -228,6 +228,7 @@ class GameManager(private val callback: GameCallback) {
 
     private fun onEndReceived(fromPeerId: String, json: JSONObject) {
         if (fromPeerId != peerId) return
+        if (json.optString("gameId", "") != gameId) return   // конец чужой/старой партии
         resetToIdle()
         callback.onOpponentLeft()
         callback.onGameSystemMessage("\u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a \u0432\u044b\u0448\u0435\u043b \u0438\u0437 \u043f\u0430\u0440\u0442\u0438\u0438")

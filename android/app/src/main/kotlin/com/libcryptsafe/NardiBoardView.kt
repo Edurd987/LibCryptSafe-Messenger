@@ -61,30 +61,21 @@ class NardiBoardView @JvmOverloads constructor(
     private val short get() = variant == NardiVariant.SHORT
 
     // ОТЛАДКА burn: печатает доску + факт сжигания, чтобы сравнить A и B.
-    private fun engIsLegalMove(s: NardiGameState, f: Int, t: Int): Boolean =
-        if (short) ShortNardiModel.isLegalMoveShort(s, f, t) else isLegalMove(s, f, t)
+    private fun engIsLegalMove(s: NardiGameState, f: Int, t: Int): Boolean = NardiEngine.legal(variant, s, f, t)
 
-    private fun engApplyMove(s: NardiGameState, f: Int, t: Int): NardiGameState =
-        if (short) ShortNardiModel.applyMoveShort(s, f, t) else applyMove(s, f, t)
+    private fun engApplyMove(s: NardiGameState, f: Int, t: Int): NardiGameState = NardiEngine.move(variant, s, f, t)
 
-    private fun engMoveDistance(mover: PlayerType, f: Int, t: Int): Int =
-        if (short) ShortNardiModel.moveDistanceShort(mover, f, t) else moveDistance(mover, f, t)
+    private fun engMoveDistance(mover: PlayerType, f: Int, t: Int): Int = NardiEngine.distance(variant, mover, f, t)
 
-    private fun engHasAnyMove(s: NardiGameState): Boolean =
-        if (short) ShortNardiModel.hasAnyLegalMoveShort(s) else hasAnyLegalMove(s)
+    private fun engHasAnyMove(s: NardiGameState): Boolean = NardiEngine.hasAnyMove(variant, s)
 
-    private fun engWinner(s: NardiGameState): PlayerType? =
-        if (short) ShortNardiModel.winnerShort(s) else winner(s)
+    private fun engWinner(s: NardiGameState): PlayerType? = NardiEngine.winnerOf(variant, s)
 
     // ВЫБРОС — ключевая асимметрия. Long canBearOff/bearOff сами ищут кость внутри.
     // Short canBearOffShort(s,from,DIE) проверяет ОДНУ кость -> обёртка сама
     // перебирает dice тем же правилом, что Long внутри: точная need, иначе
     // наименьший overshoot (dice.filter{>need}.min()). distToOffShort даёт need.
-    private fun engCanBearOff(s: NardiGameState, from: Int): Boolean {
-        if (!short) return canBearOff(s, from)
-        val dice = s.dice ?: return false
-        return dice.distinct().any { die -> ShortNardiModel.canBearOffShort(s, from, die) }
-    }
+    private fun engCanBearOff(s: NardiGameState, from: Int): Boolean = NardiEngine.canOff(variant, s, from)
 
     /** Выброс для текущего варианта. Long bearOff самодостаточен. Short: выбрать
      *  кость (need или наименьший overshoot), снять фишку applyBearOffShort,
@@ -104,19 +95,7 @@ class NardiBoardView @JvmOverloads constructor(
         return null
     }
 
-    private fun engBearOff(s: NardiGameState, from: Int): NardiGameState {
-        if (!short) return bearOff(s, from)
-        val dice = s.dice ?: return s
-        val mover = s.board[from].player
-        val need = ShortNardiModel.distToOffShort(mover, from)
-        if (need <= 0) return s
-        // та же формула выбора кости, что у длинного bearOff:
-        val die = if (need in dice) need else dice.filter { it > need }.minOrNull() ?: return s
-        // безопасность: применяем только если этой костью выброс реально легален
-        if (!ShortNardiModel.canBearOffShort(s, from, die)) return s
-        val afterOff = ShortNardiModel.applyBearOffShort(s, from)
-        return consumeDie(afterOff, die)   // consumeDie общий (вариант-независим)
-    }
+    private fun engBearOff(s: NardiGameState, from: Int): NardiGameState = NardiEngine.off(variant, s, from)
     var isConnected: Boolean = true               // связь с relay жива? (по умолчанию да)
     // Callback: локальный игрок сделал легальный ход -> отправить в трубу
     var onMoveMade: ((from: Int, to: Int, die: Int) -> Unit)? = null
@@ -126,38 +105,18 @@ class NardiBoardView @JvmOverloads constructor(
     // Входное окно: применить ход соперника, пришедший по сети.
     // Меняет state и перерисовывает — БЕЗ повторной отправки в трубу.
     fun applyRemoteMove(from: Int, to: Int, die: Int) {
-        if (from == -1) {                    // ВХОД С БАРА соперника (to=пункт входа, die=кость)
-            if (short && ShortNardiModel.isLegalBarEntry(state, die)) {
-                state = ShortNardiModel.applyBarEntry(state, die)
-                state = consumeDie(state, die)
-                if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
-                if (engWinner(state) != null) { gameOver = true; showWinBanner() }
-                invalidate()
-            } else SafeLogger.e("NARDI_NET") { "нелегальный вход с бара соперника die=$die" }
+        if (gameOver) return
+        val next = NardiRemote.applyMove(variant, state, peerColor(), from, to, die)
+        if (next == null) {   // кадр не сходится с доской — HARD STOP: доску не трогаем
+            SafeLogger.e("NARDI_NET") { "отвергнут ход соперника $from->$to die=$die" }
             return
         }
-        if (to == -1) {                      // ВЫБРОС из дома (движок сам вычислит кость)
-            if (engCanBearOff(state, from)) {
-                state = engBearOff(state, from)
-                if (engWinner(state) != null) { gameOver = true; showWinBanner() }
-                else if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
-                invalidate()
-            } else {
-                SafeLogger.e("NARDI_NET") { "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0432\u044b\u0431\u0440\u043e\u0441 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from" }
-            }
-            return
-        }
-        if (engIsLegalMove(state, from, to)) {
-            state = engApplyMove(state, from, to)
-            state = consumeDie(state, die)   // тратим ПЕРЕДАННУЮ кость, не угадываем
-            if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
-            if (engWinner(state) != null) { gameOver = true; showWinBanner() }
-            invalidate()
-        } else {
-            SafeLogger.e("NARDI_NET") { "\u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0439 \u0445\u043e\u0434 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430 $from->$to" }
-            // HARD STOP по маяку — нелегальный ход соперника = Data Integrity
-        }
+        state = next
+        if (engWinner(state) != null) { gameOver = true; showWinBanner() }
+        invalidate()
     }
+
+    private fun peerColor(): PlayerType = if (myColor == PlayerType.WHITE) PlayerType.BLACK else PlayerType.WHITE
 
     // Старт сетевой партии: обход розыгрыша ОДИН раз (WHITE ходит первым, MVP).
     fun startOnlineGame(first: PlayerType, myDie: Int = 0, peerDie: Int = 0) {
@@ -171,8 +130,13 @@ class NardiBoardView @JvmOverloads constructor(
 
     // Входное окно: применить бросок соперника (кости), пришедший по сети.
     fun applyRemoteRoll(a: Int, b: Int) {
-        state = applyRoll(state, a, b)
-        if (state.dice != null && !engHasAnyMove(state)) state = burnTurn(state)
+        if (gameOver) return
+        val next = NardiRemote.applyRoll(variant, state, peerColor(), a, b)
+        if (next == null) {   // бросок не в свой ход / поверх костей — не принимаем
+            SafeLogger.e("NARDI_NET") { "отвергнут бросок соперника $a,$b" }
+            return
+        }
+        state = next
         invalidate()
     }
     private val botHandler = android.os.Handler(android.os.Looper.getMainLooper())
