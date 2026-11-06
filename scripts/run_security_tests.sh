@@ -34,6 +34,10 @@ else mark "VPS: таймеры apt-daily/upgrade/certbot" "FAIL (получен�
 R39=$(ssh "$RELAY" 'iptables -S ufw-before-input | grep -c "0x0>>0x18&0xf=0x5"' | tr -d '\r')
 if [ "${R39:-0}" -ge 1 ]; then mark "VPS: правило CVE-2026-98432 в ufw" PASS
 else mark "VPS: правило CVE-2026-98432 в ufw" "FAIL (правил: ${R39:-?})"; fi
+# №49: вход на VPS только по ключу (sshd -T = итоговая конфигурация, с учётом sshd_config.d)
+R49=$(ssh "$RELAY" 'sshd -T | grep -E "^(passwordauthentication|kbdinteractiveauthentication) " | sort | tr "\n" " "' | tr -d '\r')
+if [ "$R49" = "kbdinteractiveauthentication no passwordauthentication no " ]; then mark "VPS: SSH только по ключу" PASS
+else mark "VPS: SSH только по ключу" "FAIL ($R49)"; fi
 
 echo "== 1. Сборка =="
 if (cd android && ./gradlew -q assembleDebug assembleDebugAndroidTest); then mark "сборка" PASS
