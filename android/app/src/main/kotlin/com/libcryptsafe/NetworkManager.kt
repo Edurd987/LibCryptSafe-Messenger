@@ -8,6 +8,7 @@ import android.os.Looper
 import android.util.Base64
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -43,6 +44,10 @@ class NetworkManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO +
         kotlinx.coroutines.CoroutineExceptionHandler { _, t ->
             SafeLogger.e("NET") { "корутина: ${t.javaClass.simpleName}" } })
+    // Входящие: одна полоса, FIFO. Порядок кадров соперника = порядок в сокете
+    // (иначе reveal обгонял commit и партия вешалась — лог 6 ноября).
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val inbound = Dispatchers.IO.limitedParallelism(1)
 
     fun connect() {
         intentionallyClosed = false
@@ -173,7 +178,7 @@ class NetworkManager(
                         try {
                             val inner = JSONObject(String(cipherBytes, Charsets.UTF_8))
                             if (inner.optString("type") == "INITIAL_HANDSHAKE") {
-                                scope.launch {
+                                scope.launch(inbound) {
                                     val result = try { SessionManager.handleInitialMessage(appContext, inner) }
                                         catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e }
                                         catch (t: Throwable) { SafeLogger.w("X3DH_RECV") { "битый INITIAL_HANDSHAKE: ${t.javaClass.simpleName}" }; null }
@@ -188,7 +193,7 @@ class NetworkManager(
                             }
                             if (inner.optString("type") == "CHAT_ENCRYPTED") {
                                 val cipherStr = inner.optString("cipher", "")
-                                scope.launch {
+                                scope.launch(inbound) {
                                     val result = try { SessionManager.decryptAnySession(appContext, cipherStr) }
                                         catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e }
                                         catch (t: Throwable) { SafeLogger.w("CHAT_RECV") { "битый CHAT_ENCRYPTED: ${t.javaClass.simpleName}" }; null }

@@ -28,6 +28,9 @@ class GameManager(private val callback: GameCallback) {
     private var outgoingSeq: Int = 0                          // мой счётчик исходящих событий
     private var expectedSeq: Int = 0                          // жду от соперника этот seq
     private val eventBuffer = mutableListOf<Pair<Int, JSONObject>>()  // ранние события (seq > expected)
+    // Умная очередь: сеть может переставить кадры. Ранний кадр ждёт своего условия, а не выбрасывается.
+    private var pendingPeerReveal: JSONObject? = null                 // reveal, обогнавший commit
+    private val openingQueue = mutableListOf<JSONObject>()            // ROLL/MOVE, пришедшие во время OPENING
 
     fun sendInvite(targetPeerId: String, gameVariant: NardiVariant = NardiVariant.LONG) {
         if (state != State.IDLE) {
@@ -123,6 +126,10 @@ class GameManager(private val callback: GameCallback) {
         peerCommitHash = json.optString("hash", "")
         SafeLogger.i("GAME_SEQ") { "OPEN <- COMMIT peer hash=${peerCommitHash.take(12)}..." }
         sendOpenReveal()
+        val early = pendingPeerReveal ?: return
+        pendingPeerReveal = null
+        SafeLogger.i("GAME_SEQ") { "OPEN <- REVEAL из очереди" }
+        onOpenRevealReceived(fromPeerId, early)                      // та же проверка хэша
     }
 
     // Шлю свою кость+соль (reveal) — только ПОСЛЕ получения commit соперника.
@@ -143,8 +150,11 @@ class GameManager(private val callback: GameCallback) {
         val owner = json.optString("owner", "")
         if (owner == myColor.name) return                    // своё эхо
         // ЗАЩИТА: reveal без предшествующего commit -> отвергаем (атака "проскочить commit")
+        // Reveal обогнал commit (переупорядочивание) -> ждём commit. Честность не страдает:
+        // после commit этот reveal пройдёт ту же проверку хэша.
         if (peerCommitHash.isEmpty()) {
-            SafeLogger.e("NARDI_NET") { "OPEN reveal БЕЗ commit — отвергнут" }
+            if (pendingPeerReveal == null) pendingPeerReveal = json
+            SafeLogger.w("NARDI_NET") { "OPEN reveal раньше commit — отложен" }
             return
         }
         val peerDie = json.optInt("die", 0)
@@ -165,6 +175,7 @@ class GameManager(private val callback: GameCallback) {
             else -> {                                        // ничья -> переброс
                 SafeLogger.i("GAME_SEQ") { "OPEN ничья $myOpeningDie=$peerDie -> переброс" }
                 peerCommitHash = ""
+                pendingPeerReveal = null
                 startOpeningRoll()                           // свежие кость+соль
             }
         }
@@ -176,6 +187,24 @@ class GameManager(private val callback: GameCallback) {
         state = State.ACTIVE
         SafeLogger.i("GAME_SEQ") { "OPEN DONE -> первый ход: $first (мой цвет $myColor)" }
         callback.onOpeningDone(first, myDie, peerDie)
+        val queued = openingQueue.toList(); openingQueue.clear()
+        if (queued.isNotEmpty()) SafeLogger.i("GAME_SEQ") { "OPEN DONE -> из очереди ${queued.size} событий" }
+        queued.forEach { processIncomingEvent(it) }                  // обычный seq/owner/границы
+    }
+
+    // ROLL/MOVE до конца розыгрыша: ACTIVE -> сразу; OPENING -> в очередь (с лимитом); иначе игнор.
+    private fun acceptPlayEvent(fromPeerId: String, json: JSONObject) {
+        if (fromPeerId != peerId) return
+        if (json.optString("gameId", "") != gameId) return
+        when (state) {
+            State.ACTIVE -> processIncomingEvent(json)
+            State.OPENING -> {
+                if (openingQueue.size >= MAX_BUFFERED) { SafeLogger.w("GAME_SEQ") { "<- DROP (очередь розыгрыша полна)" }; return }
+                openingQueue.add(slim(json))
+                SafeLogger.i("GAME_SEQ") { "<- QUEUE до конца розыгрыша seq=${json.optInt("seq", -1)}" }
+            }
+            else -> return
+        }
     }
 
     private fun sha256(bytes: ByteArray): String =
@@ -216,12 +245,7 @@ class GameManager(private val callback: GameCallback) {
         SafeLogger.i("GAME_SEQ") { "-> ROLL seq=$s $a,$b" }
     }
 
-    private fun onRollReceived(fromPeerId: String, json: JSONObject) {
-        if (state != State.ACTIVE) return
-        if (fromPeerId != peerId) return
-        if (json.optString("gameId", "") != gameId) return
-        processIncomingEvent(json)
-    }
+    private fun onRollReceived(fromPeerId: String, json: JSONObject) = acceptPlayEvent(fromPeerId, json)
 
     fun sendMove(from: Int, to: Int, die: Int) {
         if (state != State.ACTIVE) return
@@ -235,12 +259,7 @@ class GameManager(private val callback: GameCallback) {
     }
 
     // Входящий ход соперника: применяем к доске, которую видит игрок (board = истина).
-    private fun onMoveReceived(fromPeerId: String, json: JSONObject) {
-        if (state != State.ACTIVE) return
-        if (fromPeerId != peerId) return
-        if (json.optString("gameId", "") != gameId) return
-        processIncomingEvent(json)
-    }
+    private fun onMoveReceived(fromPeerId: String, json: JSONObject) = acceptPlayEvent(fromPeerId, json)
 
     // СЕРДЦЕ ФИКСА: строгий порядок событий по seq (сквозной для ROLL+MOVE).
     private fun processIncomingEvent(json: JSONObject) {
@@ -258,7 +277,7 @@ class GameManager(private val callback: GameCallback) {
             seq < expectedSeq -> SafeLogger.i("GAME_SEQ") { "<- DUP seq=$seq (ждём $expectedSeq) игнор" }
             seq > expectedSeq -> {
                 if (eventBuffer.any { it.first == seq }) return   // дубль раннего события — уже лежит
-                eventBuffer.add(seq to json)
+                eventBuffer.add(seq to slim(json))
                 SafeLogger.i("GAME_SEQ") { "<- BUFFER seq=$seq (ждём $expectedSeq)" }
             }
             else -> {
@@ -303,14 +322,30 @@ class GameManager(private val callback: GameCallback) {
     private fun resetToIdle() {
         state = State.IDLE; peerId = ""; gameId = ""; model = null
         outgoingSeq = 0; expectedSeq = 0; eventBuffer.clear()
+        pendingPeerReveal = null; openingQueue.clear(); peerCommitHash = ""; openingPhase = OpeningPhase.NONE
     }
 
     /** Сколько ранних (seq > ожидаемого) событий соперника лежит в буфере. */
     internal fun bufferedEventCount(): Int = eventBuffer.size
+    /** Сколько байт (длина JSON) держат отложенные события — для теста бюджета памяти. */
+    internal fun bufferedBytes(): Int =
+        eventBuffer.sumOf { it.second.toString().length } + openingQueue.sumOf { it.toString().length }
+
+    // Копия только с игровыми полями: худший случай памяти = 2 * MAX_BUFFERED * ~120 Б.
+    private fun slim(json: JSONObject): JSONObject {
+        val out = JSONObject()
+        for (k in PLAY_FIELDS) if (json.has(k)) {
+            val v = json.opt(k)
+            if (v is Number || (v is String && v.length <= 64)) out.put(k, v)   // длинные строки отбрасываем
+        }
+        return out
+    }
 
     companion object {
         @Volatile var INSTANCE: GameManager? = null
-        const val MAX_BUFFERED = 64   // окно ранних событий; дальше — дроп (защита памяти)
+        const val MAX_BUFFERED = 32   // окно ранних событий; дальше — дроп (защита памяти)
+        // Поля, которые реально нужны ROLL/MOVE. Всё прочее (мусор, раздувающий кадр) не храним.
+        private val PLAY_FIELDS = listOf("v", "type", "gameId", "owner", "seq", "a", "b", "from", "to", "die")
     }
 }
 
