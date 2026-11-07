@@ -26,6 +26,18 @@ object NardiEngine {
         return dice.distinct().any { die -> ShortNardiModel.canBearOffShort(s, from, die) }
     }
 
+    // Шашки на баре у того, чей ход (в длинных бара нет -> 0).
+    fun barCount(v: NardiVariant, s: NardiGameState): Int =
+        if (v != NardiVariant.SHORT) 0 else if (s.turn == PlayerType.WHITE) s.barWhite else s.barBlack
+
+    // Пункты, куда можно войти с бара текущими костями (пусто: бар пуст / кости не брошены / длинные).
+    fun barEntryTargets(v: NardiVariant, s: NardiGameState): List<Int> {
+        if (barCount(v, s) <= 0) return emptyList()
+        val dice = s.dice ?: return emptyList()
+        return dice.distinct().filter { ShortNardiModel.isLegalBarEntry(s, it) }
+            .map { ShortNardiModel.barEntryPoint(s.turn, it) }.distinct()
+    }
+
     // Выброс. Short: кость = need или наименьший overshoot, снять фишку, потратить кость.
     fun off(v: NardiVariant, s: NardiGameState, from: Int): NardiGameState {
         if (v != NardiVariant.SHORT) return bearOff(s, from)

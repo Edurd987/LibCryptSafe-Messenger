@@ -530,6 +530,22 @@ class NardiBoardView @JvmOverloads constructor(
             }
         }
 
+        // ВХОД С БАРА: подсветить пункты, куда можно войти (только своему игроку в его ход).
+        val myInput = (!isOnlineMode || state.turn == myColor) && !(botEnabled && state.turn == botColor)
+        val entryTargets = if (myInput) NardiEngine.barEntryTargets(variant, state) else emptyList()
+        for (t in entryTargets) {
+            val vCol = if (t < 12) t else 23 - t
+            val sX = if (vCol < 6) vCol * pointWidth else vCol * pointWidth + barWidth
+            val cX = pointCenterX(t)
+            val eX = sX + pointWidth
+            pointPath.reset()
+            if (t < 12) { pointPath.moveTo(sX, h); pointPath.lineTo(eX, h); pointPath.lineTo(cX, h - pointHeight) }
+            else { pointPath.moveTo(sX, 0f); pointPath.lineTo(eX, 0f); pointPath.lineTo(cX, pointHeight) }
+            pointPath.close()
+            canvas.drawPath(pointPath, moveTargetPaint)
+            canvas.drawPath(pointPath, highlightPaint)
+        }
+
         // Шашки из модели (1в-1): до 5 в стопке + число на верхней
         val maxVisible = 5
         val step = checkerRadius * 1.9f
@@ -552,6 +568,24 @@ class NardiBoardView @JvmOverloads constructor(
             val mid = (txt.descent() + txt.ascent()) / 2f
             canvas.drawText(pt.count.toString(), cx, lastCy - mid, txt)
         }
+        // ШАШКИ НА БАРЕ (короткие): белые входят в верхний ряд -> рисуем у верха бара,
+        // чёрные — у низа. Одна шашка + число. Кольцо — если сейчас нужно входить.
+        if (short) {
+            val bx = w / 2f
+            for ((player, n) in listOf(PlayerType.WHITE to state.barWhite, PlayerType.BLACK to state.barBlack)) {
+                if (n <= 0) continue
+                val by = if (player == PlayerType.WHITE) checkerRadius + 4f else h - checkerRadius - 4f
+                val fill = if (player == PlayerType.WHITE) whiteCheckerPaint else blackCheckerPaint
+                val txt = if (player == PlayerType.WHITE) checkerTextDark else checkerTextLight
+                canvas.drawCircle(bx, by, checkerRadius, fill)
+                canvas.drawCircle(bx, by, checkerRadius, checkerStrokePaint)
+                val mid = (txt.descent() + txt.ascent()) / 2f
+                canvas.drawText(n.toString(), bx, by - mid, txt)
+                if (player == state.turn && entryTargets.isNotEmpty())
+                    canvas.drawCircle(bx, by, checkerRadius + 6f, highlightPaint)
+            }
+        }
+
         // ===== БАННЕР ПОБЕДЫ (поверх всего) =====
         winBanner?.let { text ->
             val w2 = width.toFloat(); val h2 = height.toFloat()
