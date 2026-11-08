@@ -31,6 +31,15 @@ class GameManager(private val callback: GameCallback) {
     // Умная очередь: сеть может переставить кадры. Ранний кадр ждёт своего условия, а не выбрасывается.
     private var pendingPeerReveal: JSONObject? = null                 // reveal, обогнавший commit
     private val openingQueue = mutableListOf<JSONObject>()            // ROLL/MOVE, пришедшие во время OPENING
+    // №48 шаг 3: бросок = общая случайность (DiceProtocol).
+    // Я бросаю: мой секрет ждёт seed соперника.
+    private var myRollSecret: ByteArray? = null
+    private var myRollSeq = -1
+    // Соперник бросает: его commit + мой seed ждут его reveal.
+    private var peerRollHash = ""
+    private var peerRollSeq = -1
+    private var mySeedForPeer: ByteArray? = null
+    private var seedSentAtMs = 0L
 
     fun sendInvite(targetPeerId: String, gameVariant: NardiVariant = NardiVariant.LONG) {
         if (state != State.IDLE) {
@@ -45,6 +54,7 @@ class GameManager(private val callback: GameCallback) {
         val invite = JSONObject().apply {
             put("v", 1); put("type", "GAME_INVITE"); put("gameId", gameId); put("gameType", "nardi")
             put("variant", gameVariant.name)  // едет сопернику, чтобы обе доски совпали
+            put("dice", DiceProtocol.VERSION) // версия протокола броска
         }.toString()
         callback.onSendGameEvent(peerId, invite)
         callback.onGameSystemMessage("\u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435 \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e")
@@ -59,6 +69,7 @@ class GameManager(private val callback: GameCallback) {
             "GAME_END" -> onEndReceived(fromPeerId, json)
             "GAME_MOVE" -> onMoveReceived(fromPeerId, json)
             "GAME_ROLL" -> onRollReceived(fromPeerId, json)
+            "GAME_ROLL_COMMIT", "GAME_ROLL_SEED", "GAME_ROLL_REVEAL" -> acceptPlayEvent(fromPeerId, json)
             else -> SafeLogger.w("GAME_MGR") { "unknown game type: ${json.optString("type")}" }
         }
     }
@@ -67,6 +78,10 @@ class GameManager(private val callback: GameCallback) {
         if (state != State.IDLE) return
         val incomingGameId = json.optString("gameId", "")
         if (incomingGameId.isEmpty() || incomingGameId.length > 64) return
+        if (json.optInt("dice", 1) != DiceProtocol.VERSION) {   // старый клиент: бросок без общей случайности
+            callback.onGameSystemMessage("у соперника старая версия нард — нужно обновить приложение")
+            return
+        }
         peerId = fromPeerId
         gameId = incomingGameId
         myColor = PlayerType.BLACK           // принимающий играет чёрными
@@ -79,7 +94,7 @@ class GameManager(private val callback: GameCallback) {
     fun acceptInvite() {
         if (state != State.INVITED) return
         val accept = JSONObject().apply {
-            put("v", 1); put("type", "GAME_ACCEPT"); put("gameId", gameId)
+            put("v", 1); put("type", "GAME_ACCEPT"); put("gameId", gameId); put("dice", DiceProtocol.VERSION)
         }.toString()
         callback.onSendGameEvent(peerId, accept)
         startGame()
@@ -91,6 +106,10 @@ class GameManager(private val callback: GameCallback) {
         if (state != State.INVITING) return
         if (json.optString("gameId", "") != gameId) return
         if (fromPeerId != peerId) return
+        if (json.optInt("dice", 1) != DiceProtocol.VERSION) {
+            callback.onGameSystemMessage("у соперника старая версия нард — нужно обновить приложение")
+            resetToIdle(); return
+        }
         startGame()
     }
 
@@ -235,15 +254,93 @@ class GameManager(private val callback: GameCallback) {
     }
 
     // Исходящий ход: board уведомил через onMoveMade -> шлём в трубу.
-    fun sendRoll(a: Int, b: Int) {
-        if (state != State.ACTIVE) return
+    // №48 шаг 3: я бросаю. Кости НЕ выбираю: шлю commit своего секрета, жду seed соперника.
+    // true = запрос ушёл; false = нельзя (не ACTIVE или прошлый бросок ещё не завершён).
+    fun requestRoll(): Boolean {
+        if (state != State.ACTIVE || myRollSecret != null) return false
+        val secret = DiceProtocol.newSecret()
         val s = outgoingSeq++
-        val roll = JSONObject().apply {
-            put("v", 1); put("type", "GAME_ROLL"); put("gameId", gameId)
-            put("owner", myColor.name); put("seq", s); put("a", a); put("b", b)
+        myRollSecret = secret; myRollSeq = s
+        val msg = JSONObject().apply {
+            put("v", 1); put("type", "GAME_ROLL_COMMIT"); put("gameId", gameId)
+            put("owner", myColor.name); put("seq", s); put("h", DiceProtocol.commit(secret))
         }.toString()
-        callback.onSendGameEvent(peerId, roll)
-        SafeLogger.i("GAME_SEQ") { "-> ROLL seq=$s $a,$b" }
+        callback.onSendGameEvent(peerId, msg)
+        SafeLogger.i("GAME_SEQ") { "-> ROLL_COMMIT seq=$s" }
+        return true
+    }
+
+    // Соперник начал бросок: запоминаю его commit, шлю свой seed (открыто).
+    private fun onPeerRollCommit(json: JSONObject) {
+        val h = json.optString("h", ""); val rs = json.optInt("seq", -1)
+        if (!DiceProtocol.isHex64(h)) { SafeLogger.e("NARDI_NET") { "ROLL_COMMIT: плохой хэш — отвергнут" }; return }
+        if (peerRollHash.isNotEmpty()) {   // прошлый бросок не раскрыт -> новый commit = попытка перебросить
+            SafeLogger.e("NARDI_NET") { "ROLL_COMMIT до раскрытия прошлого броска — отвергнут" }; return
+        }
+        val seed = DiceProtocol.newSecret()
+        peerRollHash = h; peerRollSeq = rs; mySeedForPeer = seed; seedSentAtMs = System.currentTimeMillis()
+        val s = outgoingSeq++
+        val msg = JSONObject().apply {
+            put("v", 1); put("type", "GAME_ROLL_SEED"); put("gameId", gameId)
+            put("owner", myColor.name); put("seq", s); put("rollSeq", rs); put("s", DiceProtocol.hex(seed))
+        }.toString()
+        callback.onSendGameEvent(peerId, msg)
+        SafeLogger.i("GAME_SEQ") { "-> ROLL_SEED seq=$s roll=$rs" }
+    }
+
+    // Мой бросок: пришёл seed -> кости известны; раскрываю секрет и применяю у себя.
+    private fun onPeerRollSeed(json: JSONObject) {
+        val secret = myRollSecret
+        val rs = json.optInt("rollSeq", -1)
+        val seed = DiceProtocol.fromHexOrNull(json.optString("s", ""))
+        if (secret == null || rs != myRollSeq || seed == null) {
+            SafeLogger.e("NARDI_NET") { "ROLL_SEED не к моему броску — отвергнут" }; return
+        }
+        val (a, b) = DiceProtocol.derive(secret, seed, gameId, myRollSeq)
+        val s = outgoingSeq++
+        val msg = JSONObject().apply {
+            put("v", 1); put("type", "GAME_ROLL_REVEAL"); put("gameId", gameId)
+            put("owner", myColor.name); put("seq", s); put("rollSeq", myRollSeq); put("s", DiceProtocol.hex(secret))
+        }.toString()
+        myRollSecret = null; myRollSeq = -1
+        callback.onSendGameEvent(peerId, msg)
+        SafeLogger.i("GAME_SEQ") { "-> ROLL_REVEAL seq=$s -> $a,$b" }
+        callback.onLocalRoll(a, b)
+    }
+
+    // Бросок соперника: проверяю раскрытие против commit, считаю кости.
+    private fun onPeerRollReveal(json: JSONObject) {
+        val seed = mySeedForPeer
+        val rs = json.optInt("rollSeq", -1)
+        val secret = DiceProtocol.fromHexOrNull(json.optString("s", ""))
+        if (seed == null || rs != peerRollSeq || secret == null) {
+            SafeLogger.e("NARDI_NET") { "ROLL_REVEAL без ожидаемого броска — отвергнут" }; return
+        }
+        if (!DiceProtocol.verify(secret, peerRollHash)) {
+            SafeLogger.e("NARDI_NET") { "ROLL_REVEAL не сходится с commit — подмена броска, партия прервана" }
+            callback.onGameSystemMessage("соперник подменил бросок — партия прервана")
+            endGame(); return
+        }
+        val (a, b) = DiceProtocol.derive(secret, seed, gameId, peerRollSeq)
+        peerRollHash = ""; peerRollSeq = -1; mySeedForPeer = null; seedSentAtMs = 0L
+        SafeLogger.i("GAME_SEQ") { "<- ROLL seq=$rs $a,$b" }
+        callback.onRemoteRoll(a, b)
+    }
+
+    /** Соперник получил мой seed и не раскрывает бросок дольше таймаута — UI предложит засчитать победу. */
+    fun isPeerRevealOverdue(nowMs: Long = System.currentTimeMillis()): Boolean =
+        mySeedForPeer != null && nowMs - seedSentAtMs > DiceProtocol.REVEAL_TIMEOUT_MS
+
+    /** «Подождать ещё»: сеть могла моргнуть — релей доставит раскрытие после переподключения. */
+    fun extendRevealWait(nowMs: Long = System.currentTimeMillis()) { if (mySeedForPeer != null) seedSentAtMs = nowMs }
+
+    /** Засчитать победу: соперник не раскрыл бросок. Только если раскрытие действительно просрочено. */
+    fun claimRevealTimeout(nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (!isPeerRevealOverdue(nowMs)) return false
+        SafeLogger.e("NARDI_NET") { "соперник не раскрыл бросок — победа по таймауту" }
+        callback.onGameSystemMessage("победа: соперник не раскрыл бросок")
+        endGame()
+        return true
     }
 
     private fun onRollReceived(fromPeerId: String, json: JSONObject) = acceptPlayEvent(fromPeerId, json)
@@ -292,10 +389,11 @@ class GameManager(private val callback: GameCallback) {
     // Применить событие по типу (ROLL или MOVE) -> callback наружу к board.
     private fun applyEvent(json: JSONObject) {
         when (json.optString("type", "")) {
-            "GAME_ROLL" -> {
-                val a = json.optInt("a", 0); val b = json.optInt("b", 0)
-                if (a in 1..6 && b in 1..6) { SafeLogger.i("GAME_SEQ") { "<- ROLL seq=${json.optInt("seq")} $a,$b" }; callback.onRemoteRoll(a, b) }
-            }
+            // протокол v1: кости выбрал сам бросающий — больше не принимаем
+            "GAME_ROLL" -> SafeLogger.e("NARDI_NET") { "отвергнут бросок с выбранными костями (v1) seq=${json.optInt("seq")}" }
+            "GAME_ROLL_COMMIT" -> onPeerRollCommit(json)
+            "GAME_ROLL_SEED" -> onPeerRollSeed(json)
+            "GAME_ROLL_REVEAL" -> onPeerRollReveal(json)
             "GAME_MOVE" -> {
                 val from = json.optInt("from", -1); val to = json.optInt("to", -1)
                 val die = json.optInt("die", -1)
@@ -324,6 +422,7 @@ class GameManager(private val callback: GameCallback) {
         state = State.IDLE; peerId = ""; gameId = ""; model = null
         outgoingSeq = 0; expectedSeq = 0; eventBuffer.clear()
         pendingPeerReveal = null; openingQueue.clear(); peerCommitHash = ""; openingPhase = OpeningPhase.NONE
+        myRollSecret = null; myRollSeq = -1; peerRollHash = ""; peerRollSeq = -1; mySeedForPeer = null; seedSentAtMs = 0L
     }
 
     /** Сколько ранних (seq > ожидаемого) событий соперника лежит в буфере. */
@@ -346,7 +445,7 @@ class GameManager(private val callback: GameCallback) {
         @Volatile var INSTANCE: GameManager? = null
         const val MAX_BUFFERED = 32   // окно ранних событий; дальше — дроп (защита памяти)
         // Поля, которые реально нужны ROLL/MOVE. Всё прочее (мусор, раздувающий кадр) не храним.
-        private val PLAY_FIELDS = listOf("v", "type", "gameId", "owner", "seq", "a", "b", "from", "to", "die")
+        private val PLAY_FIELDS = listOf("v", "type", "gameId", "owner", "seq", "a", "b", "from", "to", "die", "h", "s", "rollSeq")
     }
 }
 
@@ -360,4 +459,6 @@ interface GameCallback {
     fun onOpponentLeft()
     fun onRemoteMove(from: Int, to: Int, die: Int)
     fun onRemoteRoll(a: Int, b: Int)
+    // №48 шаг 3: МОЙ бросок готов (кости из общей случайности) — применить к своей доске.
+    fun onLocalRoll(a: Int, b: Int) {}
 }

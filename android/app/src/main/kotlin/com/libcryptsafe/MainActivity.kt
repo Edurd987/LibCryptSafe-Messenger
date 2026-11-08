@@ -215,6 +215,9 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     override fun onRemoteRoll(a: Int, b: Int) {
         runOnUiThread { GameActivity.CURRENT?.applyRemoteRoll(a, b) }
     }
+    override fun onLocalRoll(a: Int, b: Int) {   // №48 шаг 3: мой бросок из общей случайности
+        runOnUiThread { GameActivity.CURRENT?.applyOwnRoll(a, b) }
+    }
 
     override fun onOpponentLeft() {
         runOnUiThread {

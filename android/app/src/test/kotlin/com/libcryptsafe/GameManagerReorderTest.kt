@@ -38,7 +38,7 @@ class GameManagerReorderTest {
     /** Мы — чёрные, партия в OPENING. */
     private fun opening(): Pair<GameManager, Rec> {
         val rec = Rec(); val gm = GameManager(rec)
-        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG"}"""))
+        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2}"""))
         gm.acceptInvite()
         assertEquals(GameManager.State.OPENING, gm.state)
         return gm to rec
@@ -73,15 +73,14 @@ class GameManagerReorderTest {
     // === Красный 2: ход соперника пришёл, пока мы ещё в OPENING ===
     @Test fun rollDuringOpeningAppliedAfterOpening() {
         val (gm, rec) = opening()
-        gm.handleGameEvent(PEER, roll(0, 2, 1))           // B уже бросил, а мы ещё разыгрываем
+        gm.handleGameEvent(PEER, move(0, 23, 21, 2))      // соперник уже ходит, а мы ещё разыгрываем
         gm.handleGameEvent(PEER, move(1, 23, 22, 1))
         assertTrue("до конца розыгрыша доска не трогается", rec.rolls.isEmpty() && rec.moves.isEmpty())
         peerDieNotTie(gm to rec) { g, d ->
             g.handleGameEvent(PEER, commit(d)); g.handleGameEvent(PEER, reveal(d))
         }
         assertEquals(GameManager.State.ACTIVE, gm.state)
-        assertEquals(listOf(2 to 1), rec.rolls)
-        assertEquals(listOf(Triple(23, 22, 1)), rec.moves)
+        assertEquals(listOf(Triple(23, 21, 2), Triple(23, 22, 1)), rec.moves)
     }
 
     // === Позитивные контроли честности (должны быть зелёными и до, и после) ===
@@ -99,18 +98,18 @@ class GameManagerReorderTest {
     }
     @Test fun earlyEventsFromStrangerNotQueued() {
         val (gm, rec) = opening()
-        gm.handleGameEvent("EEEE-EEEE-EEEE-EEEE", roll(0, 6, 6))
-        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_ROLL","gameId":"other","owner":"WHITE","seq":0,"a":6,"b":6}"""))
+        gm.handleGameEvent("EEEE-EEEE-EEEE-EEEE", move(0, 23, 17, 6))
+        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_MOVE","gameId":"other","owner":"WHITE","seq":0,"from":23,"to":17,"die":6}"""))
         peerDieNotTie(gm to rec) { g, d -> g.handleGameEvent(PEER, commit(d)); g.handleGameEvent(PEER, reveal(d)) }
         assertEquals(GameManager.State.ACTIVE, gm.state)
-        assertTrue("чужие/не той партии кадры не копятся: ${rec.rolls}", rec.rolls.isEmpty())
+        assertTrue("чужие/не той партии кадры не копятся: ${rec.moves}", rec.moves.isEmpty())
     }
     @Test fun openingQueueIsBounded() {
         val (gm, rec) = opening()
-        for (s in 0 until 1000) gm.handleGameEvent(PEER, roll(s, 3, 4))
+        for (s in 0 until 1000) gm.handleGameEvent(PEER, move(s, 23, 20, 3))
         peerDieNotTie(gm to rec) { g, d -> g.handleGameEvent(PEER, commit(d)); g.handleGameEvent(PEER, reveal(d)) }
-        assertTrue("очередь розыгрыша ограничена: применено ${rec.rolls.size}", rec.rolls.size <= GameManager.MAX_BUFFERED + 1)
-        assertNotEquals(0, rec.rolls.size)
+        assertTrue("очередь розыгрыша ограничена: применено ${rec.moves.size}", rec.moves.size <= GameManager.MAX_BUFFERED + 1)
+        assertNotEquals(0, rec.moves.size)
     }
 
     // === Память под атакой: соперник раздувает каждый ранний кадр до ~60 КБ мусорных полей ===

@@ -32,7 +32,8 @@ class GameActivity : AppCompatActivity() {
             board.variant = mgr.variant   // расстановка long/short ДО первого хода; сеттер переинициализирует доску
             board.botEnabled = false
             board.onMoveMade = { from, to, die -> GameManager.INSTANCE?.sendMove(from, to, die) }
-            board.onRollMade = { a, b -> GameManager.INSTANCE?.sendRoll(a, b) }
+            board.onRollRequest = { GameManager.INSTANCE?.requestRoll() == true }   // №48 шаг 3
+            revealWatch.postDelayed(revealTick, 5_000)
             // turn придёт из розыгрыша через startOnlineGameWithTurn (НЕ форсим WHITE)
         } else {
             chooseMode()   // офлайн — как раньше
@@ -50,6 +51,32 @@ class GameActivity : AppCompatActivity() {
     }
     fun applyRemoteRoll(a: Int, b: Int) {
         findViewById<NardiBoardView>(R.id.nardi_board)?.applyRemoteRoll(a, b)
+    }
+    fun applyOwnRoll(a: Int, b: Int) {
+        findViewById<NardiBoardView>(R.id.nardi_board)?.applyOwnRoll(a, b)
+    }
+
+    // №48 шаг 3: соперник получил мой seed и не раскрывает бросок -> ПРЕДЛОЖИТЬ засчитать победу.
+    // Не автоматически: сеть могла моргнуть, релей доставит раскрытие после переподключения.
+    private val revealWatch = android.os.Handler(android.os.Looper.getMainLooper())
+    private var revealDialogShown = false
+    private val revealTick = object : Runnable {
+        override fun run() {
+            val mgr = GameManager.INSTANCE
+            if (mgr != null && !revealDialogShown && mgr.isPeerRevealOverdue()) {
+                revealDialogShown = true
+                AlertDialog.Builder(this@GameActivity)
+                    .setTitle("Соперник не раскрывает бросок")
+                    .setMessage("Уже больше минуты. Возможно, у соперника пропала связь. Засчитать победу?")
+                    .setCancelable(false)
+                    .setPositiveButton("Подождать ещё") { _, _ -> mgr.extendRevealWait(); revealDialogShown = false }
+                    .setNegativeButton("Засчитать победу") { _, _ ->
+                        if (mgr.claimRevealTimeout()) finish() else revealDialogShown = false
+                    }
+                    .show()
+            }
+            revealWatch.postDelayed(this, 5_000)
+        }
     }
     fun onConnectionChanged(connected: Boolean) {
         findViewById<NardiBoardView>(R.id.nardi_board)?.let {
@@ -82,6 +109,7 @@ class GameActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        revealWatch.removeCallbacks(revealTick)
         if (CURRENT === this) CURRENT = null
     }
 

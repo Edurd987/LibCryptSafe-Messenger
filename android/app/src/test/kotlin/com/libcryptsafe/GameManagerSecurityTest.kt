@@ -32,7 +32,7 @@ class GameManagerSecurityTest {
     /** Довести партию до ACTIVE: мы приняли приглашение (чёрные), соперник — белые. */
     private fun active(): Pair<GameManager, Rec> {
         val rec = Rec(); val gm = GameManager(rec)
-        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG"}"""))
+        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2}"""))
         gm.acceptInvite()
         val salt = "00112233445566778899aabbccddeeff"
         val saltBytes = salt.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
@@ -53,10 +53,9 @@ class GameManagerSecurityTest {
     // --- позитивные контроли ---
     @Test fun validEventsAppliedInSeqOrder() {
         val (gm, rec) = active()
-        gm.handleGameEvent(PEER, move(1, 23, 20, 3))     // пришёл раньше броска
-        gm.handleGameEvent(PEER, roll(0, 3, 5))
-        assertEquals(listOf(3 to 5), rec.rolls)
-        assertEquals(listOf(Triple(23, 20, 3)), rec.moves)
+        gm.handleGameEvent(PEER, move(1, 23, 20, 3))     // пришёл раньше первого
+        gm.handleGameEvent(PEER, move(0, 23, 18, 5))
+        assertEquals(listOf(Triple(23, 18, 5), Triple(23, 20, 3)), rec.moves)
     }
     @Test fun legitBearOffAndBarEntryPass() {
         val (gm, rec) = active()

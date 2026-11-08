@@ -101,6 +101,9 @@ class NardiBoardView @JvmOverloads constructor(
     var onMoveMade: ((from: Int, to: Int, die: Int) -> Unit)? = null
     // Callback: локальный игрок бросил кости -> отправить сопернику (ROLL)
     var onRollMade: ((a: Int, b: Int) -> Unit)? = null
+    // №48 шаг 3: онлайн-бросок — запрос в GameManager (общая случайность), true = запрос ушёл
+    var onRollRequest: (() -> Boolean)? = null
+    private var awaitingRoll = false               // запрос ушёл, ждём кости
 
     // Входное окно: применить ход соперника, пришедший по сети.
     // Меняет state и перерисовывает — БЕЗ повторной отправки в трубу.
@@ -137,6 +140,18 @@ class NardiBoardView @JvmOverloads constructor(
             return
         }
         state = next
+        invalidate()
+    }
+    // №48 шаг 3: МОЙ онлайн-бросок готов (кости из общей случайности) — применить к своей доске
+    // тем же правилом, что бросок соперника (мой ход, костей нет, розыгрыш окончен).
+    fun applyOwnRoll(a: Int, b: Int) {
+        awaitingRoll = false
+        if (gameOver) return
+        val next = NardiRemote.applyRoll(variant, state, myColor, a, b)
+        if (next == null) { SafeLogger.e("NARDI_NET") { "свой бросок $a,$b не применён: не мой ход или кости уже есть" }; return }
+        state = next
+        winBanner = null; openingMyDie = 0; openingPeerDie = 0   // убрать баннер розыгрыша
+        SafeLogger.i("BOT_AUDIT") { "human roll dice=${state.dice} max=${maxDiceUsable(state)}" }
         invalidate()
     }
     private val botHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -343,12 +358,12 @@ class NardiBoardView @JvmOverloads constructor(
                 if (state.dice == null) {
                     if (state.isOpening) {
                         state = rollOpening(state)  // розыгрыш первого хода
+                    } else if (isOnlineMode) {
+                        // №48 шаг 3: кости НЕ бросаем сами — просим GameManager (commit -> seed -> reveal),
+                        // результат придёт в applyOwnRoll. Повторный тап, пока ждём, ничего не шлёт.
+                        if (!awaitingRoll && onRollRequest?.invoke() == true) awaitingRoll = true
                     } else {
                         state = rollDice(state)
-                        // Кирпич 6.4: бросок -> сопернику (только онлайн). dice=[a,b] или [a,a,a,a].
-                        val d = state.dice
-                        if (isOnlineMode && d != null && d.size >= 2) onRollMade?.invoke(d[0], d[1])
-                        if (isOnlineMode && !gameOver) { winBanner = null; openingMyDie = 0; openingPeerDie = 0 }   // убрать баннер розыгрыша
                         SafeLogger.i("BOT_AUDIT") { "human roll dice=${state.dice} max=${maxDiceUsable(state)}" }
                         if (!engHasAnyMove(state)) state = burnTurn(state)
                     }
