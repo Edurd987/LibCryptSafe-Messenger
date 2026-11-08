@@ -1045,9 +1045,24 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
 
     // Онлайн-приглашение в нарды выбранного варианта. Один контакт обязателен
     // (currentPeerId). LONG/SHORT решает пункт меню; вариант едет в GAME_INVITE.
+    // №51: соперника выбирает человек из СВОИХ контактов (InvitePicker). Раньше приглашение
+    // молча уходило текущему собеседнику чата — 2026-11-06 ушло на эмулятор вместо телефона B.
+    // Незнакомцу (собеседник не из контактов) пригласить нельзя.
     private fun inviteToNardi(variant: NardiVariant) {
-        if (currentPeerId != "UNKNOWN") gameManager.sendInvite(currentPeerId, variant)
-        else android.widget.Toast.makeText(this, "\u0441\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u044b\u0431\u0435\u0440\u0438 \u043a\u043e\u043d\u0442\u0430\u043a\u0442", android.widget.Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val book = withContext(Dispatchers.IO) { db.contactDao().getAllOnce() }.map { it.name to it.contactId }
+            val opts = InvitePicker.options(book, currentPeerId)
+            if (opts.isEmpty()) { toast("сначала добавь контакт"); return@launch }
+            val title = if (variant == NardiVariant.SHORT) "Короткие — кого пригласить?" else "Длинные — кого пригласить?"
+            androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                .setTitle(title)
+                .setItems(opts.map { it.label }.toTypedArray()) { _, k ->
+                    gameManager.sendInvite(opts[k].peerId, variant)
+                    toast("приглашение → " + opts[k].label)
+                }
+                .setNegativeButton(getString(R.string.btn_cancel), null)
+                .show()
+        }
     }
 
     private fun loadVault() {
