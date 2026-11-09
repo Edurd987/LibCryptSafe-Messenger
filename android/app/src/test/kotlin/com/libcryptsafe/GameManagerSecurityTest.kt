@@ -32,7 +32,7 @@ class GameManagerSecurityTest {
     /** Довести партию до ACTIVE: мы приняли приглашение (чёрные), соперник — белые. */
     private fun active(): Pair<GameManager, Rec> {
         val rec = Rec(); val gm = GameManager(rec)
-        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2}"""))
+        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2,"ts":${System.currentTimeMillis()}}"""))
         gm.acceptInvite()
         val salt = "00112233445566778899aabbccddeeff"
         val saltBytes = salt.chunked(2).map { it.toInt(16).toByte() }.toByteArray()

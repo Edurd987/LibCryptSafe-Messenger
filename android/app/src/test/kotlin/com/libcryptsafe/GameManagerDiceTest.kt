@@ -37,7 +37,7 @@ class GameManagerDiceTest {
     /** Партия ACTIVE. Возвращает следующий seq, который мы ждём от соперника (0). */
     private fun active(inviteDice: Int? = 2): Pair<GameManager, Rec> {
         val rec = Rec(); val gm = GameManager(rec)
-        val dice = if (inviteDice == null) "" else ""","dice":$inviteDice"""
+        val dice = if (inviteDice == null) ""","ts":${System.currentTimeMillis()}""" else ""","dice":$inviteDice,"ts":${System.currentTimeMillis()}"""
         gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG"$dice}"""))
         if (gm.state != GameManager.State.INVITED) return gm to rec
         gm.acceptInvite()
@@ -132,14 +132,14 @@ class GameManagerDiceTest {
     @Test fun revealTimeoutReported() {
         val (gm, _) = active()
         gm.handleGameEvent(PEER, peer("GAME_ROLL_COMMIT", 0, ""","h":"${DiceProtocol.commit(DiceProtocol.newSecret())}""""))
-        assertFalse("сразу после seed — не просрочено", gm.isPeerRevealOverdue(System.currentTimeMillis()))
-        assertTrue(gm.isPeerRevealOverdue(System.currentTimeMillis() + DiceProtocol.REVEAL_TIMEOUT_MS + 1))
+        assertFalse("сразу после seed — не просрочено", gm.isPeerRevealOverdue(gm.monoClock()))
+        assertTrue(gm.isPeerRevealOverdue(gm.monoClock() + DiceProtocol.REVEAL_TIMEOUT_MS + 1))
     }
 
     @Test fun claimOnlyAfterTimeoutAndExtendResets() {
         val (gm, _) = active()
         gm.handleGameEvent(PEER, peer("GAME_ROLL_COMMIT", 0, ""","h":"${DiceProtocol.commit(DiceProtocol.newSecret())}""""))
-        val now = System.currentTimeMillis()
+        val now = gm.monoClock()
         assertFalse("победа до таймаута", gm.claimRevealTimeout(now))
         assertEquals(GameManager.State.ACTIVE, gm.state)
         val later = now + DiceProtocol.REVEAL_TIMEOUT_MS + 1

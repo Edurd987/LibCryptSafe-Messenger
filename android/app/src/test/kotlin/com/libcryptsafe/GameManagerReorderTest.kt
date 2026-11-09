@@ -38,7 +38,7 @@ class GameManagerReorderTest {
     /** Мы — чёрные, партия в OPENING. */
     private fun opening(): Pair<GameManager, Rec> {
         val rec = Rec(); val gm = GameManager(rec)
-        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2}"""))
+        gm.handleGameEvent(PEER, j("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2,"ts":${System.currentTimeMillis()}}"""))
         gm.acceptInvite()
         assertEquals(GameManager.State.OPENING, gm.state)
         return gm to rec

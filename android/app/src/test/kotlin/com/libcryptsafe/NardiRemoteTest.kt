@@ -93,7 +93,7 @@ class NardiRemoteTest {
     }
     private fun invited(): GameManager {
         val gm = GameManager(Rec())
-        gm.handleGameEvent("AAAA-BBBB-CCCC-DDDD", JSONObject("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2}"""))
+        gm.handleGameEvent("AAAA-BBBB-CCCC-DDDD", JSONObject("""{"v":1,"type":"GAME_INVITE","gameId":"g1","variant":"LONG","dice":2,"ts":${System.currentTimeMillis()}}"""))
         gm.acceptInvite()
         return gm
     }

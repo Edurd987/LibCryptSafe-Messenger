@@ -39,9 +39,17 @@ class GameManager(private val callback: GameCallback) {
     private var peerRollHash = ""
     private var peerRollSeq = -1
     private var mySeedForPeer: ByteArray? = null
-    private var seedSentAtMs = 0L
+    private var seedSentAtMs = 0L                 // по монотонным часам (monoClock)
+    // №52: срок годности приглашения. INVITING — когда отправил я; INVITED — ts из приглашения.
+    private var inviteTs = 0L
+    internal var wallClock: () -> Long = { System.currentTimeMillis() }      // настенные: ts между телефонами
+    internal var monoClock: () -> Long = { System.nanoTime() / 1_000_000 }   // монотонные: интервалы на одном телефоне
 
     fun sendInvite(targetPeerId: String, gameVariant: NardiVariant = NardiVariant.LONG) {
+        if (state == State.INVITING && inviteExpired(lateGrace = true)) {   // соперник так и не ответил
+            callback.onGameSystemMessage("соперник не ответил — прошлое приглашение снято")
+            resetToIdle()
+        }
         if (state != State.IDLE) {
             callback.onGameSystemMessage("\u0443\u0436\u0435 \u0432 \u0438\u0433\u0440\u0435 \u0438\u043b\u0438 \u0436\u0434\u0451\u043c \u043e\u0442\u0432\u0435\u0442")
             return
@@ -51,10 +59,12 @@ class GameManager(private val callback: GameCallback) {
         myColor = PlayerType.WHITE           // приглашающий играет белыми
         variant = gameVariant                // A задаёт вариант сам
         state = State.INVITING
+        inviteTs = wallClock()
         val invite = JSONObject().apply {
             put("v", 1); put("type", "GAME_INVITE"); put("gameId", gameId); put("gameType", "nardi")
             put("variant", gameVariant.name)  // едет сопернику, чтобы обе доски совпали
             put("dice", DiceProtocol.VERSION) // версия протокола броска
+            put("ts", inviteTs)               // №52: когда отправлено (настенные часы отправителя)
         }.toString()
         callback.onSendGameEvent(peerId, invite)
         callback.onGameSystemMessage("\u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435 \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e")
@@ -82,6 +92,16 @@ class GameManager(private val callback: GameCallback) {
             callback.onGameSystemMessage("у соперника старая версия нард — нужно обновить приложение")
             return
         }
+        val ts = json.optLong("ts", 0L)
+        val age = wallClock() - ts
+        if (ts <= 0L || age > INVITE_TTL_MS + CLOCK_SKEW_MS || age < -CLOCK_SKEW_MS) {
+            SafeLogger.w("GAME_MGR") { "приглашение отвергнуто: ts=$ts age=${age / 1000}s" }
+            callback.onGameSystemMessage(
+                if (ts <= 0L) "приглашение от старой версии — нужно обновить приложение"
+                else "пришло устаревшее приглашение — попросите прислать новое")
+            return
+        }
+        inviteTs = ts
         peerId = fromPeerId
         gameId = incomingGameId
         myColor = PlayerType.BLACK           // принимающий играет чёрными
@@ -93,6 +113,10 @@ class GameManager(private val callback: GameCallback) {
 
     fun acceptInvite() {
         if (state != State.INVITED) return
+        if (inviteExpired(lateGrace = false)) {         // диалог «принять?» провисел дольше срока
+            callback.onGameSystemMessage("приглашение устарело — попросите прислать новое")
+            resetToIdle(); return
+        }
         val accept = JSONObject().apply {
             put("v", 1); put("type", "GAME_ACCEPT"); put("gameId", gameId); put("dice", DiceProtocol.VERSION)
         }.toString()
@@ -109,6 +133,10 @@ class GameManager(private val callback: GameCallback) {
         if (json.optInt("dice", 1) != DiceProtocol.VERSION) {
             callback.onGameSystemMessage("у соперника старая версия нард — нужно обновить приложение")
             resetToIdle(); return
+        }
+        if (inviteExpired(lateGrace = true)) {          // согласие пришло слишком поздно: соперник уже на доске —
+            callback.onGameSystemMessage("ответ на приглашение пришёл слишком поздно")
+            endGame(); return                           // GAME_END снимет его с мёртвой доски
         }
         startGame()
     }
@@ -278,7 +306,7 @@ class GameManager(private val callback: GameCallback) {
             SafeLogger.e("NARDI_NET") { "ROLL_COMMIT до раскрытия прошлого броска — отвергнут" }; return
         }
         val seed = DiceProtocol.newSecret()
-        peerRollHash = h; peerRollSeq = rs; mySeedForPeer = seed; seedSentAtMs = System.currentTimeMillis()
+        peerRollHash = h; peerRollSeq = rs; mySeedForPeer = seed; seedSentAtMs = monoClock()
         val s = outgoingSeq++
         val msg = JSONObject().apply {
             put("v", 1); put("type", "GAME_ROLL_SEED"); put("gameId", gameId)
@@ -328,14 +356,14 @@ class GameManager(private val callback: GameCallback) {
     }
 
     /** Соперник получил мой seed и не раскрывает бросок дольше таймаута — UI предложит засчитать победу. */
-    fun isPeerRevealOverdue(nowMs: Long = System.currentTimeMillis()): Boolean =
+    fun isPeerRevealOverdue(nowMs: Long = monoClock()): Boolean =
         mySeedForPeer != null && nowMs - seedSentAtMs > DiceProtocol.REVEAL_TIMEOUT_MS
 
     /** «Подождать ещё»: сеть могла моргнуть — релей доставит раскрытие после переподключения. */
-    fun extendRevealWait(nowMs: Long = System.currentTimeMillis()) { if (mySeedForPeer != null) seedSentAtMs = nowMs }
+    fun extendRevealWait(nowMs: Long = monoClock()) { if (mySeedForPeer != null) seedSentAtMs = nowMs }
 
     /** Засчитать победу: соперник не раскрыл бросок. Только если раскрытие действительно просрочено. */
-    fun claimRevealTimeout(nowMs: Long = System.currentTimeMillis()): Boolean {
+    fun claimRevealTimeout(nowMs: Long = monoClock()): Boolean {
         if (!isPeerRevealOverdue(nowMs)) return false
         SafeLogger.e("NARDI_NET") { "соперник не раскрыл бросок — победа по таймауту" }
         callback.onGameSystemMessage("победа: соперник не раскрыл бросок")
@@ -418,8 +446,12 @@ class GameManager(private val callback: GameCallback) {
         }
     }
 
+    // №52: приглашение просрочено? lateGrace — запас на доставку ответа (сторона приглашающего).
+    private fun inviteExpired(lateGrace: Boolean): Boolean =
+        wallClock() - inviteTs > INVITE_TTL_MS + CLOCK_SKEW_MS + (if (lateGrace) ACCEPT_GRACE_MS else 0L)
+
     private fun resetToIdle() {
-        state = State.IDLE; peerId = ""; gameId = ""; model = null
+        state = State.IDLE; peerId = ""; gameId = ""; model = null; inviteTs = 0L
         outgoingSeq = 0; expectedSeq = 0; eventBuffer.clear()
         pendingPeerReveal = null; openingQueue.clear(); peerCommitHash = ""; openingPhase = OpeningPhase.NONE
         myRollSecret = null; myRollSeq = -1; peerRollHash = ""; peerRollSeq = -1; mySeedForPeer = null; seedSentAtMs = 0L
@@ -443,6 +475,9 @@ class GameManager(private val callback: GameCallback) {
 
     companion object {
         @Volatile var INSTANCE: GameManager? = null
+        const val INVITE_TTL_MS = 5 * 60_000L     // №52: приглашение живёт 5 минут
+        const val CLOCK_SKEW_MS = 2 * 60_000L     // допуск на расхождение часов телефонов
+        const val ACCEPT_GRACE_MS = 60_000L       // запас на доставку ответа через релей
         const val MAX_BUFFERED = 32   // окно ранних событий; дальше — дроп (защита памяти)
         // Поля, которые реально нужны ROLL/MOVE. Всё прочее (мусор, раздувающий кадр) не храним.
         private val PLAY_FIELDS = listOf("v", "type", "gameId", "owner", "seq", "a", "b", "from", "to", "die", "h", "s", "rollSeq")
