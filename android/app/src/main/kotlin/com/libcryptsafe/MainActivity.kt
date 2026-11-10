@@ -945,11 +945,11 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 .apply {
                     setOnShowListener {
                         getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                            val name = inName.text.toString().trim()
+                            val name = ContactName.clean(inName.text.toString())   // 2..40, без управляющих
                             // канонизация ID: только hex, верхний регистр, ровно 16
                             val raw = inId.text.toString().uppercase().filter { it in "0123456789ABCDEF" }
                             when {
-                                name.isEmpty() ->
+                                name == null ->
                                     toast(getString(R.string.contact_err_name))
                                 raw.length != 16 ->
                                     toast(getString(R.string.contact_err_id))
@@ -1018,10 +1018,43 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     findViewById<TextView>(R.id.tab_chat).performClick()  // перейти на вкладку Чат
                 }
                 // Удаление: долгое нажатие -> выбор (как у каналов). Сессию ключей НЕ трогаем.
-                row.setOnLongClickListener { confirmDeleteContact(c); true }
+                row.setOnLongClickListener { contactActions(c); true }
                 list.addView(row)
             }
         }
+    }
+
+    // Долгое нажатие на контакт: переименовать / удалить. В заголовке — хвост ID, чтобы не спутать тёзок.
+    private fun contactActions(c: com.libcryptsafe.db.ContactEntity) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(c.name + "  (" + c.contactId.takeLast(4) + ")")
+            .setItems(arrayOf(getString(R.string.contact_rename), getString(R.string.contact_delete_title))) { _, which ->
+                if (which == 0) renameContact(c) else confirmDeleteContact(c)
+            }
+            .setNegativeButton(getString(R.string.channel_cancel), null)
+            .show()
+    }
+
+    // Переименование: меняется только локальное имя (ID, сессия ключей и переписка — те же).
+    private fun renameContact(c: com.libcryptsafe.db.ContactEntity) {
+        val input = android.widget.EditText(this).apply {
+            setText(c.name); setSelection(text.length); isSingleLine = true
+            filters = arrayOf(android.text.InputFilter.LengthFilter(ContactName.MAX))
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.contact_rename) + "  (" + c.contactId.takeLast(4) + ")")
+            .setView(input)
+            .setPositiveButton(getString(R.string.contact_save)) { _, _ ->
+                val newName = ContactName.clean(input.text.toString())
+                if (newName == null) { toast(getString(R.string.contact_err_name)); return@setPositiveButton }
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { db.contactDao().rename(c.contactId, newName) }
+                    refreshContacts()
+                    toast(getString(R.string.contact_renamed))
+                }
+            }
+            .setNegativeButton(getString(R.string.contact_cancel), null)
+            .show()
     }
 
     // Удаление контакта. Сессия ключей СОХРАНЯЕТСЯ: собеседник продолжит писать по ней

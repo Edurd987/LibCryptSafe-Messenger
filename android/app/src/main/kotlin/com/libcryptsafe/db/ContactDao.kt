@@ -20,6 +20,9 @@ interface ContactDao {
     @Delete
     suspend fun delete(contact: ContactEntity)
 
+    @Query("UPDATE contacts SET name = :name WHERE contactId = :cid")
+    suspend fun rename(cid: String, name: String): Int      // имя меняется, ID и ключи — нет
+
     @Query("SELECT COUNT(*) FROM contacts WHERE contactId = :cid")
     suspend fun countById(cid: String): Int   // для проверки дублей
 }

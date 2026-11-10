@@ -109,7 +109,9 @@
     <string name="contact_id_hint">ID (XXXX-XXXX-XXXX-XXXX)</string>
     <string name="contact_save">Save</string>
     <string name="contact_cancel">Cancel</string>
-    <string name="contact_err_name">Enter a name</string>
+    <string name="contact_err_name">Name: 2 to 40 characters</string>
+    <string name="contact_rename">Rename</string>
+    <string name="contact_renamed">Contact renamed</string>
     <string name="contact_err_id">Invalid ID (need 16 hex characters)</string>
     <string name="contact_err_dup">This ID is already in your contacts</string>
     <string name="contact_err_self">You can\'t add your own ID</string>
