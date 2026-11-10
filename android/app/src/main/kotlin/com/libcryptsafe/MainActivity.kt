@@ -187,15 +187,27 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     override fun onSendGameEvent(targetPeerId: String, gameJson: String) {
         sendGameEvent(targetPeerId, gameJson)
     }
+    // №45a: приглашение от КОНТАКТА — диалог с именем и хвостом ID; от НЕЗНАКОМЦА — диалога нет,
+    // отклоняем молча для него и показываем заметку с полным ID (не чаще раза в 10 мин на ID).
+    private val strangerInviteNotedAt = HashMap<String, Long>()
     override fun onInviteReceived(fromPeerId: String) {
-        runOnUiThread {
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("\u041d\u0430\u0440\u0434\u044b")
-                .setMessage("\u041f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435 \u0432 \u0438\u0433\u0440\u0443 \u043e\u0442 $fromPeerId")
-                .setPositiveButton("\u041f\u0440\u0438\u043d\u044f\u0442\u044c") { _, _ -> gameManager.acceptInvite() }
-                .setNegativeButton("\u041e\u0442\u043a\u043b\u043e\u043d\u0438\u0442\u044c") { _, _ -> gameManager.declineInvite() }
-                .setCancelable(false)
-                .show()
+        lifecycleScope.launch {
+            val book = withContext(Dispatchers.IO) { db.contactDao().getAllOnce() }.map { it.name to it.contactId }
+            val now = android.os.SystemClock.elapsedRealtime()
+            when (val d = IncomingInvite.decide(book, fromPeerId, strangerInviteNotedAt[fromPeerId], now)) {
+                is IncomingInvite.Decision.Stranger -> {
+                    gameManager.declineInvite()
+                    SafeLogger.w("GAME_MGR") { "приглашение от незнакомца отклонено" }
+                    if (d.notify) { strangerInviteNotedAt[fromPeerId] = now; toast(IncomingInvite.strangerText(fromPeerId)) }
+                }
+                is IncomingInvite.Decision.Show -> androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Нарды")
+                    .setMessage("Приглашение в игру от " + d.label)
+                    .setPositiveButton("Принять") { _, _ -> gameManager.acceptInvite() }
+                    .setNegativeButton("Отклонить") { _, _ -> gameManager.declineInvite() }
+                    .setCancelable(false)
+                    .show()
+            }
         }
     }
     override fun onGameStarted(peerId: String, gameId: String) {
