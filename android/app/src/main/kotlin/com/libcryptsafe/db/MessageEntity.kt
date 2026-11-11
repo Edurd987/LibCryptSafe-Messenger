@@ -10,5 +10,6 @@ data class MessageEntity(
     val text: String,
     val isOwn: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
-    val status: String = "SENT"   // SENT, DELIVERED, READ, PENDING
+    val status: String = "SENT",  // SENT, DELIVERED, READ, PENDING
+    val nonce: String? = null     // свои сообщения: nonce для ACK (переживает перезапуск); у входящих/старых — null
 )

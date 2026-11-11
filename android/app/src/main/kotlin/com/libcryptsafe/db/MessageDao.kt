@@ -38,6 +38,10 @@ interface MessageDao {
     @Query("UPDATE messages SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String)
 
+    // ACK по БД: своё сообщение этому собеседнику с этим nonce -> DELIVERED. Возвращает число строк.
+    @Query("UPDATE messages SET status = 'DELIVERED' WHERE peerId = :peerId AND nonce = :nonce AND isOwn = 1")
+    suspend fun markDeliveredByNonce(peerId: String, nonce: String): Int
+
     // Удалить весь диалог с контактом
     @Query("DELETE FROM messages WHERE peerId = :peerId")
     suspend fun clearDialog(peerId: String)

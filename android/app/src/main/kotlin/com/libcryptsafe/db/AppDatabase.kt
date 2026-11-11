@@ -12,7 +12,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class, ChannelEntity::class, PostEntity::class, MediaEntity::class, SeenNonceEntity::class],
-    version = 8, exportSchema = false)
+    version = 9, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun contactDao(): ContactDao
@@ -96,6 +96,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_seen_peer_nonce ON seen_nonces(peerId, nonce)")
             }
         }
+        // 8 -> 9: nonce своего сообщения хранится в БД (ACK после перезапуска). Старые строки: NULL.
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN nonce TEXT")
+            }
+        }
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -155,7 +161,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 ).openHelperFactory(factory)
-                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)  // путь B: данные сохраняются
+                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)  // путь B: данные сохраняются
                       .build()
 
                 val instance = try {

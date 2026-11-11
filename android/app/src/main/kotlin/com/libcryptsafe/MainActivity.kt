@@ -1686,7 +1686,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         }
                     }
                     val ack = j.optString("a", "")
-                    if (ack.isNotEmpty()) { markDelivered(ack); return }
+                    if (ack.isNotEmpty()) { markDelivered(peerId, ack); return }
                     val n = j.optString("n", "")
                     if (n.isNotEmpty()) {
                         // ANTI-REPLAY (время): старше окна -> отвергаем. Нет ts — старый формат, полагаемся на nonce.
@@ -1714,15 +1714,18 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         handleIncoming(raw, peerId)
     }
 
-    private fun markDelivered(nonce: String) {
-        val id = nonceToIdMap[nonce]
-        if (id != null) {
-            lifecycleScope.launch(Dispatchers.IO) { db.messageDao().updateStatus(id, "DELIVERED") }
-        }
-        nonceToViewMap[nonce]?.let { tv -> tv.text = bubbleText(tv.text.toString(), true, "DELIVERED") }
+    // ACK: статус пишется В БД по (собеседник, nonce) — работает и после перезапуска отправителя.
+    // Чужой собеседник не может «подтвердить» не своё сообщение (peerId в условии).
+    private fun markDelivered(peerId: String, nonce: String) {
+        val tv = nonceToViewMap.remove(nonce)
         nonceToIdMap.remove(nonce)
-        nonceToViewMap.remove(nonce)
-        SafeLogger.d("ACK") { "delivered nonce=${nonce.take(8)}" }
+        tv?.let { it.text = bubbleText(it.text.toString(), true, "DELIVERED") }
+        lifecycleScope.launch(Dispatchers.IO) {
+            val rows = db.messageDao().markDeliveredByNonce(peerId, nonce)
+            SafeLogger.d("ACK") { "delivered nonce=${nonce.take(8)} rows=$rows" }
+            // открыт этот чат, но пузырь нарисован из истории (после перезапуска) -> перерисовать
+            if (rows > 0 && tv == null && peerId == currentPeerId) withContext(Dispatchers.Main) { loadHistory() }
+        }
     }
 
     private fun sendAck(targetId: String, nonce: String) {
@@ -1996,7 +1999,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         if (peerId != currentPeerId) {
             // не в открытом чате — но сохранить в БД всё равно (без отрисовки).
             if (persist) lifecycleScope.launch(Dispatchers.IO) {
-                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
+                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce))
                 if (nonce != null) nonceToIdMap[nonce] = newId
             }
             return
@@ -2024,7 +2027,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         // insert ПОСЛЕ создания tv -> проставляем tag ЭТОМУ tv напрямую (по ссылке),
         // работает для входящих И исходящих (у входящих нет nonce, но tv есть).
         if (persist) lifecycleScope.launch(Dispatchers.IO) {
-            val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn))
+            val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce))
             if (nonce != null) nonceToIdMap[nonce] = newId
             runOnUiThread { tv.tag = newId }   // tag тому самому tv, без nonce
         }
