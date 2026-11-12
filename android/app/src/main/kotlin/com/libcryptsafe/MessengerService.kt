@@ -56,9 +56,25 @@ class MessengerService : Service() {
         override fun onHandshakeDone(fingerprint: String) = dispatch { it.onHandshakeDone(fingerprint) }
         override fun onSystemMessage(text: String) = dispatch { it.onSystemMessage(text) }
         override fun onPeerIdResolved(peerId: String) = dispatch { it.onPeerIdResolved(peerId) }
-        override fun onChatReceived(peerId: String, rawDecrypted: String) = dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(rawDecrypted)) { it.onChatReceived(peerId, rawDecrypted) }
-        override fun onInitialHandshakeReceived(peerId: String, content: String) = dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(content)) { it.onInitialHandshakeReceived(peerId, content) }
+        override fun onChatReceived(peerId: String, rawDecrypted: String) {
+            if (blocked(peerId)) return
+            dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(rawDecrypted)) { it.onChatReceived(peerId, rawDecrypted) }
+        }
+        override fun onInitialHandshakeReceived(peerId: String, content: String) {
+            if (blocked(peerId)) return
+            dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(content)) { it.onInitialHandshakeReceived(peerId, content) }
+        }
         override fun onChannelPosts(channelId: String, posts: List<IncomingPost>) = dispatch { it.onChannelPosts(channelId, posts) }
+    }
+
+    // Чёрный список: единая точка для ВСЕГО входящего (с Activity и без, уведомление тоже).
+    // Зовётся с IO-потока входящих (NetworkManager, inbound) — синхронное чтение БД тут допустимо.
+    private fun blocked(peerId: String): Boolean {
+        val b = BlockList.isBlocked(peerId) {
+            com.libcryptsafe.db.AppDatabase.getInstance(applicationContext).blockedDao().allIdsBlocking()
+        }
+        if (b) com.libcryptsafe.util.SafeLogger.i("BLOCK") { "входящее от заблокированного …${peerId.takeLast(4)} выброшено" }
+        return b
     }
 
     fun ensureNetwork(serverUrl: String, stableId: String, pubKey: ByteArray?): NetworkManager {

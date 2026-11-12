@@ -111,6 +111,10 @@
     <string name="contact_cancel">Cancel</string>
     <string name="contact_err_name">Name: 2 to 40 characters</string>
     <string name="contact_rename">Rename</string>
+    <string name="contact_block">Block</string>
+    <string name="contact_unblock">Unblock</string>
+    <string name="contact_blocked">Blocked: their messages and invites are dropped</string>
+    <string name="contact_unblocked">Unblocked</string>
     <string name="contact_renamed">Contact renamed</string>
     <string name="contact_err_id">Invalid ID (need 16 hex characters)</string>
     <string name="contact_err_dup">This ID is already in your contacts</string>

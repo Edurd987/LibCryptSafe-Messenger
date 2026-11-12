@@ -1026,13 +1026,31 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
 
     // Долгое нажатие на контакт: переименовать / удалить. В заголовке — хвост ID, чтобы не спутать тёзок.
     private fun contactActions(c: com.libcryptsafe.db.ContactEntity) {
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(c.name + "  (" + c.contactId.takeLast(4) + ")")
-            .setItems(arrayOf(getString(R.string.contact_rename), getString(R.string.contact_delete_title))) { _, which ->
-                if (which == 0) renameContact(c) else confirmDeleteContact(c)
+        lifecycleScope.launch {
+            val blocked = withContext(Dispatchers.IO) { db.blockedDao().countById(c.contactId) > 0 }
+            androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                .setTitle(c.name + "  (" + c.contactId.takeLast(4) + ")" + if (blocked) "  ⛔" else "")
+                .setItems(arrayOf(getString(R.string.contact_rename), getString(R.string.contact_delete_title),
+                    getString(if (blocked) R.string.contact_unblock else R.string.contact_block))) { _, which ->
+                    when (which) { 0 -> renameContact(c); 1 -> confirmDeleteContact(c); else -> setBlocked(c, !blocked) }
+                }
+                .setNegativeButton(getString(R.string.channel_cancel), null)
+                .show()
+        }
+    }
+
+    // Чёрный список: входящее от этого ID выбрасывается в MessengerService (сообщения, игры, медиа, ACK).
+    // Ему ничего не сообщаем. Присланное за время блокировки не сохраняется.
+    private fun setBlocked(c: com.libcryptsafe.db.ContactEntity, block: Boolean) {
+        lifecycleScope.launch {
+            val ids = withContext(Dispatchers.IO) {
+                val dao = db.blockedDao()
+                if (block) dao.insert(com.libcryptsafe.db.BlockedEntity(c.contactId)) else dao.delete(c.contactId)
+                dao.allIds()
             }
-            .setNegativeButton(getString(R.string.channel_cancel), null)
-            .show()
+            BlockList.replaceAll(ids)
+            toast(getString(if (block) R.string.contact_blocked else R.string.contact_unblocked))
+        }
     }
 
     // Переименование: меняется только локальное имя (ID, сессия ключей и переписка — те же).

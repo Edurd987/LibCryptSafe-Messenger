@@ -110,6 +110,10 @@
     <string name="contact_cancel">Отмена</string>
     <string name="contact_err_name">Имя: от 2 до 40 символов</string>
     <string name="contact_rename">Переименовать</string>
+    <string name="contact_block">Заблокировать</string>
+    <string name="contact_unblock">Разблокировать</string>
+    <string name="contact_blocked">Заблокирован: его сообщения и приглашения не приходят</string>
+    <string name="contact_unblocked">Разблокирован</string>
     <string name="contact_renamed">Контакт переименован</string>
     <string name="contact_err_id">Неверный ID (нужно 16 hex-символов)</string>
     <string name="contact_err_dup">Этот ID уже в контактах</string>
