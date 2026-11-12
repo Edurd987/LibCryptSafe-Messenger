@@ -77,6 +77,7 @@ class GameManager(private val callback: GameCallback) {
             "GAME_OPEN_COMMIT" -> onOpenCommitReceived(fromPeerId, json)
             "GAME_OPEN_REVEAL" -> onOpenRevealReceived(fromPeerId, json)
             "GAME_END" -> onEndReceived(fromPeerId, json)
+            "GAME_DECLINE" -> onDeclineReceived(fromPeerId, json)
             "GAME_MOVE" -> onMoveReceived(fromPeerId, json)
             "GAME_ROLL" -> onRollReceived(fromPeerId, json)
             "GAME_ROLL_COMMIT", "GAME_ROLL_SEED", "GAME_ROLL_REVEAL" -> acceptPlayEvent(fromPeerId, json)
@@ -124,7 +125,24 @@ class GameManager(private val callback: GameCallback) {
         startGame()
     }
 
-    fun declineInvite() { resetToIdle() }
+    // Отказ от приглашения. notifyPeer=true — ТОЛЬКО контакту из диалога: приглашающий сразу перестаёт ждать.
+    // По умолчанию молча: незнакомцу ничего не отвечаем (даже «нет» выдаёт, что мы онлайн).
+    fun declineInvite(notifyPeer: Boolean = false) {
+        if (state != State.INVITED) return
+        if (notifyPeer) callback.onSendGameEvent(peerId, JSONObject().apply {
+            put("v", 1); put("type", "GAME_DECLINE"); put("gameId", gameId)
+        }.toString())
+        resetToIdle()
+    }
+
+    // Соперник отклонил МОЁ приглашение: только тот, кого звал, и только эту партию.
+    private fun onDeclineReceived(fromPeerId: String, json: JSONObject) {
+        if (state != State.INVITING) return
+        if (fromPeerId != peerId) return
+        if (json.optString("gameId", "") != gameId) return
+        resetToIdle()
+        callback.onGameSystemMessage("соперник отклонил приглашение")
+    }
 
     private fun onAcceptReceived(fromPeerId: String, json: JSONObject) {
         if (state != State.INVITING) return

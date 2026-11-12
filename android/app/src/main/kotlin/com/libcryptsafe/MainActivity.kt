@@ -204,7 +204,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     .setTitle("Нарды")
                     .setMessage("Приглашение в игру от " + d.label)
                     .setPositiveButton("Принять") { _, _ -> gameManager.acceptInvite() }
-                    .setNegativeButton("Отклонить") { _, _ -> gameManager.declineInvite() }
+                    .setNegativeButton("Отклонить") { _, _ -> gameManager.declineInvite(notifyPeer = true) }
                     .setCancelable(false)
                     .show()
             }
