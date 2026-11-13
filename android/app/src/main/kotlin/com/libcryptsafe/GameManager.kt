@@ -113,7 +113,10 @@ class GameManager(private val callback: GameCallback) {
     }
 
     fun acceptInvite() {
-        if (state != State.INVITED) return
+        if (state != State.INVITED) {
+            if (state == State.IDLE) callback.onGameSystemMessage("приглашение уже не действует")
+            return
+        }
         if (inviteExpired(lateGrace = false)) {         // диалог «принять?» провисел дольше срока
             callback.onGameSystemMessage("приглашение устарело — попросите прислать новое")
             resetToIdle(); return
@@ -134,6 +137,20 @@ class GameManager(private val callback: GameCallback) {
         }.toString())
         resetToIdle()
     }
+
+    // Отмена МОЕГО приглашения (соперник молчит). Только ожидание — идущую партию не трогает.
+    fun cancelInvite() {
+        if (state != State.INVITING) return
+        callback.onSendGameEvent(peerId, JSONObject().apply {
+            put("v", 1); put("type", "GAME_END"); put("gameId", gameId)
+        }.toString())
+        resetToIdle()
+        callback.onGameSystemMessage("приглашение отменено")
+    }
+
+    // Кого я жду (для кнопки «отменить»). Просроченное не показываем: sendInvite снимет его сам.
+    fun pendingInvitePeer(): String? =
+        if (state == State.INVITING && !inviteExpired(lateGrace = true)) peerId else null
 
     // Соперник отклонил МОЁ приглашение: только тот, кого звал, и только эту партию.
     private fun onDeclineReceived(fromPeerId: String, json: JSONObject) {
@@ -294,6 +311,11 @@ class GameManager(private val callback: GameCallback) {
     private fun onEndReceived(fromPeerId: String, json: JSONObject) {
         if (fromPeerId != peerId) return
         if (json.optString("gameId", "") != gameId) return   // конец чужой/старой партии
+        if (state == State.INVITED) {                        // отменили приглашение — партии ещё не было
+            resetToIdle()
+            callback.onGameSystemMessage("соперник отменил приглашение")
+            return
+        }
         resetToIdle()
         callback.onOpponentLeft()
         callback.onGameSystemMessage("\u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a \u0432\u044b\u0448\u0435\u043b \u0438\u0437 \u043f\u0430\u0440\u0442\u0438\u0438")

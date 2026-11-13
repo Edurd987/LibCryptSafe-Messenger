@@ -1117,6 +1117,17 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     private fun inviteToNardi(variant: NardiVariant) {
         lifecycleScope.launch {
             val book = withContext(Dispatchers.IO) { db.contactDao().getAllOnce() }.map { it.name to it.contactId }
+            // Уже жду ответа -> предложить отменить (не ждать 8 минут, если соперник молчит).
+            gameManager.pendingInvitePeer()?.let { p ->
+                val name = book.firstOrNull { it.second == p }?.first ?: "контакт"
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Ждём ответа")
+                    .setMessage("Приглашение уже отправлено: $name (${p.takeLast(4)}). Отменить его?")
+                    .setPositiveButton("Отменить приглашение") { _, _ -> gameManager.cancelInvite() }
+                    .setNegativeButton("Ждать", null)
+                    .show()
+                return@launch
+            }
             val opts = InvitePicker.options(book, currentPeerId)
             if (opts.isEmpty()) { toast("сначала добавь контакт"); return@launch }
             val title = if (variant == NardiVariant.SHORT) "Короткие — кого пригласить?" else "Длинные — кого пригласить?"
