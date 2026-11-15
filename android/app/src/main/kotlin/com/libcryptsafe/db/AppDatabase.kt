@@ -12,7 +12,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [MessageEntity::class, ContactEntity::class, PrekeyEntity::class, SessionEntity::class, ChannelEntity::class, PostEntity::class, MediaEntity::class, SeenNonceEntity::class, BlockedEntity::class],
-    version = 10, exportSchema = false)
+    version = 11, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun contactDao(): ContactDao
@@ -99,6 +99,12 @@ abstract class AppDatabase : RoomDatabase() {
         }
         // 8 -> 9: nonce своего сообщения хранится в БД (ACK после перезапуска). Старые строки: NULL.
         // 9 -> 10: чёрный список. Схема — ровно как у Room для BlockedEntity (иначе проверка схемы упадёт).
+        // 10 -> 11: пометка «сообщение от незнакомца» (№45b). Старые строки: 0. DEFAULT 0 совпадает с @ColumnInfo.
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN fromStranger INTEGER NOT NULL DEFAULT 0")
+            }
+        }
         private val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `blocked_peers` (`peerId` TEXT NOT NULL, `blockedAt` INTEGER NOT NULL, PRIMARY KEY(`peerId`))")
@@ -168,7 +174,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 ).openHelperFactory(factory)
-                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)  // путь B: данные сохраняются
+                      .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)  // путь B: данные сохраняются
                       .build()
 
                 val instance = try {

@@ -43,6 +43,15 @@ interface MessageDao {
     suspend fun markDeliveredByNonce(peerId: String, nonce: String): Int
 
     // Удалить весь диалог с контактом
+    // №45b: сколько ЗАПРОСОВ лежит от этого ID — только полученные, пока он был незнакомцем
+    // (старая переписка удалённого контакта в лимит не входит).
+    @Query("SELECT COUNT(*) FROM messages WHERE peerId = :peerId AND isOwn = 0 AND fromStranger = 1")
+    suspend fun countFromStranger(peerId: String): Int
+
+    // №45b: добавил в контакты -> его запросы становятся обычной перепиской.
+    @Query("UPDATE messages SET fromStranger = 0 WHERE peerId = :peerId AND fromStranger = 1")
+    suspend fun acceptStranger(peerId: String): Int
+
     @Query("DELETE FROM messages WHERE peerId = :peerId")
     suspend fun clearDialog(peerId: String)
 

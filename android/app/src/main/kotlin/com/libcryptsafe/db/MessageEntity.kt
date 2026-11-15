@@ -1,5 +1,6 @@
 package com.libcryptsafe.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -11,5 +12,7 @@ data class MessageEntity(
     val isOwn: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
     val status: String = "SENT",  // SENT, DELIVERED, READ, PENDING
-    val nonce: String? = null     // свои сообщения: nonce для ACK (переживает перезапуск); у входящих/старых — null
+    val nonce: String? = null,    // свои сообщения: nonce для ACK (переживает перезапуск); у входящих/старых — null
+    // №45b: получено, пока отправитель НЕ был в контактах («запрос»). Снимается при добавлении в контакты.
+    @ColumnInfo(defaultValue = "0") val fromStranger: Boolean = false
 )

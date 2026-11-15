@@ -40,6 +40,23 @@ class MessengerService : Service() {
     @Volatile private var lastConnected = false
     @Volatile private var lastReconnects = 0
 
+    // №45b: входящее сообщение. Без Activity — уведомление по StrangerPolicy (незнакомцы — с интервалом).
+    private fun dispatchIncoming(contact: Boolean, userMessage: Boolean, ev: (MessengerEventHandler) -> Unit) {
+        val h = activityHandler
+        if (h != null) { ev(h); return }
+        synchronized(pending) { pending.add(ev) }
+        val now = System.currentTimeMillis()
+        if (StrangerPolicy.notify(contact, userMessage, StrangerPolicy.lastStrangerNotifyAt, now)) {
+            if (!contact) StrangerPolicy.lastStrangerNotifyAt = now
+            com.libcryptsafe.util.IncomingNotifier.post(applicationContext)
+        }
+    }
+
+    // №45b: свой контакт? Кэш ContactSet; с IO-потока входящих синхронное чтение БД допустимо.
+    private fun isContact(peerId: String): Boolean = ContactSet.isContact(peerId) {
+        com.libcryptsafe.db.AppDatabase.getInstance(applicationContext).contactDao().allIdsBlocking()
+    }
+
     private fun dispatch(notify: Boolean = false, ev: (MessengerEventHandler) -> Unit) {
         val h = activityHandler
         if (h != null) { ev(h); return }
@@ -58,11 +75,18 @@ class MessengerService : Service() {
         override fun onPeerIdResolved(peerId: String) = dispatch { it.onPeerIdResolved(peerId) }
         override fun onChatReceived(peerId: String, rawDecrypted: String) {
             if (blocked(peerId)) return
-            dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(rawDecrypted)) { it.onChatReceived(peerId, rawDecrypted) }
+            val contact = isContact(peerId)
+            if (StrangerPolicy.dropInService(contact, rawDecrypted)) {
+                com.libcryptsafe.util.SafeLogger.i("STRANGER") { "медиа/неизвестный кадр от незнакомца …${peerId.takeLast(4)} выброшен" }
+                return
+            }
+            dispatchIncoming(contact, com.libcryptsafe.util.IncomingNotifier.isUserMessage(rawDecrypted)) { it.onChatReceived(peerId, rawDecrypted) }
         }
         override fun onInitialHandshakeReceived(peerId: String, content: String) {
             if (blocked(peerId)) return
-            dispatch(com.libcryptsafe.util.IncomingNotifier.isUserMessage(content)) { it.onInitialHandshakeReceived(peerId, content) }
+            val contact = isContact(peerId)
+            if (StrangerPolicy.dropInService(contact, content)) return
+            dispatchIncoming(contact, com.libcryptsafe.util.IncomingNotifier.isUserMessage(content)) { it.onInitialHandshakeReceived(peerId, content) }
         }
         override fun onChannelPosts(channelId: String, posts: List<IncomingPost>) = dispatch { it.onChannelPosts(channelId, posts) }
     }

@@ -155,14 +155,15 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             // Иначе входящее от Боба НЕ угонит открытый чат Алисы: сообщение
             // сохранится под своим пиром (handleDecrypted), notifyIncoming предупредит.
             // №38: входящее не меняет ни открытый, ни сохранённый чат - только если чат не выбран вообще
-            if (currentPeerId == "UNKNOWN") { currentPeerId = peerId; saveLastPeerId(peerId) }
+            // №45b: «первый собеседник» — только свой контакт; незнакомец чат на экран не открывает.
+            if (currentPeerId == "UNKNOWN" && ContactSet.isKnown(peerId)) { currentPeerId = peerId; saveLastPeerId(peerId) }
             handleDecrypted(peerId, rawDecrypted)
         }
     }
     override fun onInitialHandshakeReceived(peerId: String, content: String) {
         runOnUiThread {
-            if (currentPeerId == "UNKNOWN") { currentPeerId = peerId; saveLastPeerId(peerId) }   // №38
-            handleIncoming(content, peerId)
+            if (currentPeerId == "UNKNOWN" && ContactSet.isKnown(peerId)) { currentPeerId = peerId; saveLastPeerId(peerId) }   // №38, №45b
+            deliverIncoming(content, peerId)
         }
     }
 
@@ -962,6 +963,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                                         if (dup > 0) { toast(getString(R.string.contact_err_dup)); return@launch }
                                         withContext(Dispatchers.IO) {
                                             db.contactDao().insert(com.libcryptsafe.db.ContactEntity(name = name, contactId = canon))
+                                            db.messageDao().acceptStranger(canon)   // №45b: его запросы -> обычная переписка
                                         }
                                         toast(getString(R.string.contact_added))
                                         refreshContacts()
@@ -982,6 +984,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         val empty = findViewById<TextView>(R.id.tv_contacts_empty)
         lifecycleScope.launch {
             val items = withContext(Dispatchers.IO) { db.contactDao().getAllOnce() }
+            ContactSet.replaceAll(items.map { it.contactId })   // №45b: свой/незнакомец
             list.removeAllViews()
             empty.visibility = if (items.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
             val pad = (12 * resources.displayMetrics.density).toInt()
@@ -1725,12 +1728,17 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                         }
                         // ANTI-REPLAY: повтор пакета (тот же n) -> не показываем второй раз.
                         // ACK шлём ВСЕГДА: первый мог потеряться, иначе отправитель повторяет вечно.
+                        // №45b: незнакомцу ACK НЕ шлём (квитанция выдаёт, что мы в сети), текст — с лимитом.
                         lifecycleScope.launch(Dispatchers.IO) {
                             val fresh = db.seenNonceDao().markSeen(peerId, n)
+                            val contact = isContactIo(peerId)
+                            val stored = if (contact) 0 else db.messageDao().countFromStranger(peerId)
+                            val verdict = StrangerPolicy.chat(contact, fresh, stored)
                             withContext(Dispatchers.Main) {
-                                if (fresh) handleIncoming(j.optString("t", ""), peerId)
+                                if (verdict.store) handleIncoming(j.optString("t", ""), peerId, notify = shouldNotify(contact), fromStranger = !contact)
+                                else if (fresh) SafeLogger.i("STRANGER") { "незнакомец …${peerId.takeLast(4)}: лимит хранения — не сохранено" }
                                 else SafeLogger.i("REPLAY") { "dup chat nonce from $peerId — скрыто" }
-                                sendAck(peerId, n)
+                                if (verdict.ack) sendAck(peerId, n)
                             }
                         }
                         return
@@ -1740,7 +1748,32 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 // v == 0 -> не наш новый протокол: откат ниже
             }
         } catch (_: Exception) { /* fallback below */ }
-        handleIncoming(raw, peerId)
+        deliverIncoming(raw, peerId)
+    }
+
+    // №45b: свой контакт? (с фонового потока; кэш ContactSet общий с MessengerService)
+    private fun isContactIo(peerId: String): Boolean =
+        ContactSet.isContact(peerId) { db.contactDao().allIdsBlocking() }
+
+    // №45b: уведомлять ли — незнакомцы не чаще раза в 10 мин на всех сразу.
+    private fun shouldNotify(contact: Boolean): Boolean {
+        val now = System.currentTimeMillis()
+        val ok = StrangerPolicy.notify(contact, true, StrangerPolicy.lastStrangerNotifyAt, now)
+        if (ok && !contact) StrangerPolicy.lastStrangerNotifyAt = now
+        return ok
+    }
+
+    // №45b: входящее без nonce (первое сообщение X3DH, старый текстовый формат) — тот же лимит незнакомца.
+    private fun deliverIncoming(raw: String, peerId: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val contact = isContactIo(peerId)
+            val stored = if (contact) 0 else db.messageDao().countFromStranger(peerId)
+            val verdict = StrangerPolicy.chat(contact, fresh = true, storedFromPeer = stored)
+            withContext(Dispatchers.Main) {
+                if (verdict.store) handleIncoming(raw, peerId, notify = shouldNotify(contact), fromStranger = !contact)
+                else SafeLogger.i("STRANGER") { "незнакомец …${peerId.takeLast(4)}: лимит хранения — не сохранено" }
+            }
+        }
     }
 
     // ACK: статус пишется В БД по (собеседник, nonce) — работает и после перезапуска отправителя.
@@ -1808,7 +1841,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         com.libcryptsafe.util.IncomingNotifier.post(this)
     }
 
-    private fun handleIncoming(raw: String, senderPeerId: String) {
+    private fun handleIncoming(raw: String, senderPeerId: String, notify: Boolean = true, fromStranger: Boolean = false) {
         // Сохраняем по ИСТОЧНИКУ (senderPeerId), не по открытому чату. Раньше
         // addMessage дефолтил peerId=currentPeerId -> сообщение от Боба, пришедшее
         // при открытом чате Алисы, садилось под Алису и "пропадало" при рестарте.
@@ -1818,8 +1851,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             org.json.JSONObject(raw)
         } catch (e: Exception) {
             // не JSON => старый формат, чистый текст чата
-            addMessage(raw, isOwn = false, persist = true, peerId = safePeer)
-            notifyIncoming()
+            addMessage(raw, isOwn = false, persist = true, peerId = safePeer, fromStranger = fromStranger)
+            if (notify) notifyIncoming()
             return
         }
         // нет версии => старый формат (на всякий случай)
@@ -1831,8 +1864,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         when (json.optString("type")) {
             "CHAT" -> {
                 val text = json.optString("text", "")
-                addMessage(text, isOwn = false, persist = true, peerId = safePeer)
-                notifyIncoming()
+                addMessage(text, isOwn = false, persist = true, peerId = safePeer, fromStranger = fromStranger)
+                if (notify) notifyIncoming()
             }
             else -> {
                 // неизвестный тип => игнор (не падаем, не доверяем сети)
@@ -2023,12 +2056,12 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         return if (isOwn && status == "DELIVERED") "$text  \u2713\u2713" else text
     }
 
-    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null, status: String = "NONE", msgId: Long = -1L) {
+    private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null, status: String = "NONE", msgId: Long = -1L, fromStranger: Boolean = false) {
         // ФАНТОМНЫЕ СООБЩЕНИЯ: рисуем в ленту ТОЛЬКО если peerId == открытый чат.
         if (peerId != currentPeerId) {
             // не в открытом чате — но сохранить в БД всё равно (без отрисовки).
             if (persist) lifecycleScope.launch(Dispatchers.IO) {
-                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce))
+                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce, fromStranger = fromStranger))
                 if (nonce != null) nonceToIdMap[nonce] = newId
             }
             return
@@ -2056,7 +2089,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         // insert ПОСЛЕ создания tv -> проставляем tag ЭТОМУ tv напрямую (по ссылке),
         // работает для входящих И исходящих (у входящих нет nonce, но tv есть).
         if (persist) lifecycleScope.launch(Dispatchers.IO) {
-            val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce))
+            val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce, fromStranger = fromStranger))
             if (nonce != null) nonceToIdMap[nonce] = newId
             runOnUiThread { tv.tag = newId }   // tag тому самому tv, без nonce
         }

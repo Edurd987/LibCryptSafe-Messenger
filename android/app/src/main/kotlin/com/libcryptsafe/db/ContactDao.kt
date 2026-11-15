@@ -23,6 +23,10 @@ interface ContactDao {
     @Query("UPDATE contacts SET name = :name WHERE contactId = :cid")
     suspend fun rename(cid: String, name: String): Int      // имя меняется, ID и ключи — нет
 
+    // Синхронно: только с фонового потока (кэш ContactSet для №45b), не с главного.
+    @Query("SELECT contactId FROM contacts")
+    fun allIdsBlocking(): List<String>
+
     @Query("SELECT COUNT(*) FROM contacts WHERE contactId = :cid")
     suspend fun countById(cid: String): Int   // для проверки дублей
 }
