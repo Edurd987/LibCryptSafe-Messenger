@@ -114,6 +114,17 @@
     <string name="contact_unblock">Разблокировать</string>
     <string name="contact_blocked">Заблокирован: его сообщения и приглашения не приходят</string>
     <string name="contact_unblocked">Разблокирован</string>
+    <string name="requests_title">Запросы от незнакомцев (%1$d)</string>
+    <string name="requests_meta">%1$d сообщ. · последнее %2$s</string>
+    <string name="requests_from">Запрос: %1$s</string>
+    <string name="requests_note">Не из ваших контактов. Отправитель не знает, что вы получили или прочитали это.</string>
+    <string name="request_add">В контакты</string>
+    <string name="request_block">Заблокировать</string>
+    <string name="request_delete">Удалить</string>
+    <string name="request_name_hint">Имя</string>
+    <string name="request_block_confirm">Заблокировать %1$s? Его сообщения и приглашения перестанут приходить, сохранённые запросы удалятся.</string>
+    <string name="request_delete_confirm">Удалить запросы от %1$s?</string>
+    <string name="request_deleted">Запросы удалены</string>
     <string name="contact_renamed">Контакт переименован</string>
     <string name="contact_err_id">Неверный ID (нужно 16 hex-символов)</string>
     <string name="contact_err_dup">Этот ID уже в контактах</string>

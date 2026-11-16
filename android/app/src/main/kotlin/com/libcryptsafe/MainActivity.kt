@@ -1024,7 +1024,117 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 row.setOnLongClickListener { contactActions(c); true }
                 list.addView(row)
             }
+            renderRequests(list, pad)   // №45b: запросы — под контактами, в той же корутине (после removeAllViews)
         }
+    }
+
+    // №45b шаг 2: «Запросы от незнакомцев» — под списком контактов. Полный ID, число, время последнего.
+    private suspend fun renderRequests(list: LinearLayout, pad: Int) {
+        val reqs = withContext(Dispatchers.IO) {
+            StrangerRequests.build(
+                db.messageDao().strangerRequests(),
+                db.contactDao().getAllOnce().map { it.contactId }.toSet(),
+                db.blockedDao().allIds().toSet())
+        }
+        if (reqs.isEmpty()) return
+        list.addView(TextView(this@MainActivity).apply {
+            text = getString(R.string.requests_title, reqs.size)
+            setTextColor(0xFFFFC46B.toInt()); textSize = 13f
+            setPadding(0, pad, 0, pad / 2)
+        })
+        val fmt = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault())
+        for (r in reqs) {
+            val row = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad, pad, pad, pad)
+                setBackgroundResource(R.drawable.glass_card)
+            }
+            row.addView(TextView(this@MainActivity).apply {
+                text = r.peerId                                   // ПОЛНЫЙ ID: хвост подбирается перебором
+                setTextColor(0xFFFFC46B.toInt()); textSize = 13f
+                typeface = android.graphics.Typeface.MONOSPACE
+            })
+            row.addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.requests_meta, r.count, fmt.format(java.util.Date(r.lastTs)))
+                setTextColor(0xFF8A93A0.toInt()); textSize = 12f
+            })
+            row.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (8 * resources.displayMetrics.density).toInt() }
+            val peer = r.peerId
+            row.setOnClickListener { openRequest(peer) }
+            list.addView(row)
+        }
+    }
+
+    // Прочитать запрос. Чтение НИЧЕГО не отправляет незнакомцу (ни ACK, ни «прочитано»).
+    private fun openRequest(peerId: String) {
+        lifecycleScope.launch {
+            val msgs = withContext(Dispatchers.IO) { db.messageDao().strangerMessages(peerId) }
+            val fmt = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault())
+            val body = getString(R.string.requests_note) + "\n\n" +
+                msgs.joinToString("\n\n") { fmt.format(java.util.Date(it.timestamp)) + "\n" + StrangerRequests.safeText(it.text) }
+            val tv = TextView(this@MainActivity).apply {
+                text = body; textSize = 14f; autoLinkMask = 0          // никаких автоссылок в чужом тексте
+                val p = (20 * resources.displayMetrics.density).toInt(); setPadding(p, p / 2, p, 0)
+            }
+            androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                .setTitle(getString(R.string.requests_from, peerId))
+                .setView(android.widget.ScrollView(this@MainActivity).apply { addView(tv) })
+                .setPositiveButton(getString(R.string.request_add)) { _, _ -> addFromRequest(peerId) }
+                .setNeutralButton(getString(R.string.request_block)) { _, _ -> confirmRequest(peerId, block = true) }
+                .setNegativeButton(getString(R.string.request_delete)) { _, _ -> confirmRequest(peerId, block = false) }
+                .show()
+        }
+    }
+
+    // «В контакты»: имя по тем же правилам; запросы становятся обычной перепиской.
+    private fun addFromRequest(peerId: String) {
+        val input = android.widget.EditText(this).apply {
+            isSingleLine = true; hint = getString(R.string.request_name_hint)
+            filters = arrayOf(android.text.InputFilter.LengthFilter(ContactName.MAX))
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.request_add) + "  (" + peerId.takeLast(4) + ")")
+            .setView(input)
+            .setPositiveButton(getString(R.string.contact_save)) { _, _ ->
+                val name = ContactName.clean(input.text.toString())
+                if (name == null) { toast(getString(R.string.contact_err_name)); return@setPositiveButton }
+                lifecycleScope.launch {
+                    val added = withContext(Dispatchers.IO) {
+                        if (db.contactDao().countById(peerId) > 0) false
+                        else {
+                            db.contactDao().insert(com.libcryptsafe.db.ContactEntity(name = name, contactId = peerId))
+                            db.messageDao().acceptStranger(peerId)
+                            true
+                        }
+                    }
+                    toast(getString(if (added) R.string.contact_added else R.string.contact_err_dup))
+                    refreshContacts()
+                }
+            }
+            .setNegativeButton(getString(R.string.contact_cancel), null)
+            .show()
+    }
+
+    // «Заблокировать» (+ удалить запросы) или «Удалить» (только запросы) — с подтверждением.
+    private fun confirmRequest(peerId: String, block: Boolean) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setMessage(getString(if (block) R.string.request_block_confirm else R.string.request_delete_confirm, peerId))
+            .setPositiveButton(getString(if (block) R.string.request_block else R.string.request_delete)) { _, _ ->
+                lifecycleScope.launch {
+                    val ids = withContext(Dispatchers.IO) {
+                        if (block) db.blockedDao().insert(com.libcryptsafe.db.BlockedEntity(peerId))
+                        db.messageDao().deleteStrangerMessages(peerId)
+                        db.blockedDao().allIds()
+                    }
+                    if (block) BlockList.replaceAll(ids)
+                    toast(getString(if (block) R.string.contact_blocked else R.string.request_deleted))
+                    refreshContacts()
+                }
+            }
+            .setNegativeButton(getString(R.string.contact_cancel), null)
+            .show()
     }
 
     // Долгое нажатие на контакт: переименовать / удалить. В заголовке — хвост ID, чтобы не спутать тёзок.

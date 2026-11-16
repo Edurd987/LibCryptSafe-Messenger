@@ -52,6 +52,17 @@ interface MessageDao {
     @Query("UPDATE messages SET fromStranger = 0 WHERE peerId = :peerId AND fromStranger = 1")
     suspend fun acceptStranger(peerId: String): Int
 
+    // №45b шаг 2: экран «Запросы» — кто прислал, сколько, когда последнее.
+    @Query("SELECT peerId, COUNT(*) AS cnt, MAX(timestamp) AS lastTs FROM messages WHERE fromStranger = 1 AND isOwn = 0 GROUP BY peerId")
+    suspend fun strangerRequests(): List<StrangerRequestRow>
+
+    @Query("SELECT * FROM messages WHERE peerId = :peerId AND fromStranger = 1 AND isOwn = 0 ORDER BY timestamp ASC")
+    suspend fun strangerMessages(peerId: String): List<MessageEntity>
+
+    // Только запросы: переписка времён, когда он был контактом, не трогается.
+    @Query("DELETE FROM messages WHERE peerId = :peerId AND fromStranger = 1")
+    suspend fun deleteStrangerMessages(peerId: String): Int
+
     @Query("DELETE FROM messages WHERE peerId = :peerId")
     suspend fun clearDialog(peerId: String)
 

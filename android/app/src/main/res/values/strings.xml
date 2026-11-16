@@ -115,6 +115,17 @@
     <string name="contact_unblock">Unblock</string>
     <string name="contact_blocked">Blocked: their messages and invites are dropped</string>
     <string name="contact_unblocked">Unblocked</string>
+    <string name="requests_title">Requests from strangers (%1$d)</string>
+    <string name="requests_meta">%1$d msg · last %2$s</string>
+    <string name="requests_from">Request: %1$s</string>
+    <string name="requests_note">Not in your contacts. The sender does not know you received or read this.</string>
+    <string name="request_add">Add to contacts</string>
+    <string name="request_block">Block</string>
+    <string name="request_delete">Delete</string>
+    <string name="request_name_hint">Name</string>
+    <string name="request_block_confirm">Block %1$s? Their messages and invites will be dropped, saved requests deleted.</string>
+    <string name="request_delete_confirm">Delete requests from %1$s?</string>
+    <string name="request_deleted">Requests deleted</string>
     <string name="contact_renamed">Contact renamed</string>
     <string name="contact_err_id">Invalid ID (need 16 hex characters)</string>
     <string name="contact_err_dup">This ID is already in your contacts</string>
