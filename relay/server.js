@@ -67,6 +67,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS channel_posts (
 )`)
 db.exec('CREATE INDEX IF NOT EXISTS idx_channel_posts ON channel_posts(channel_id)')
 const cpInsert = db.prepare('INSERT OR IGNORE INTO channel_posts (channel_id,seq,payload,created_at) VALUES (?,?,?,?)')
+// №57: пост канала — только с верной подписью владельца. channelId = Base64(SPKI DER P-256, 91 байт) = его ключ.
+// Подпись ECDSA P-256 + SHA-256 (DER) над [seq 8Б BE][ts 8Б BE][content UTF-8] (ChannelSerializer.kt / channel_sign).
+// Возвращает проверенный seq или null. Содержимое поста релей не толкует — только проверяет подпись.
+const CH_SEQ_MAX = 2 ** 31 - 1
+function verifyChannelPost(channelId, seq, payloadStr) {
+    if (typeof channelId !== 'string' || typeof payloadStr !== 'string') return null
+    if (!Number.isInteger(seq) || seq < 1 || seq > CH_SEQ_MAX) return null
+    const der = Buffer.from(channelId, 'base64')
+    if (der.length !== 91 || der.toString('base64') !== channelId) return null      // только каноничная запись ключа
+    let key
+    try { key = crypto.createPublicKey({ key: der, format: 'der', type: 'spki' }) } catch (e) { return null }
+    if (key.asymmetricKeyType !== 'ec' || !key.asymmetricKeyDetails || key.asymmetricKeyDetails.namedCurve !== 'prime256v1') return null
+    let p
+    try { p = JSON.parse(payloadStr) } catch (e) { return null }
+    if (!p || typeof p.content !== 'string' || typeof p.sig !== 'string' || !Number.isSafeInteger(p.ts)) return null
+    const head = Buffer.alloc(16)
+    head.writeBigInt64BE(BigInt(seq), 0); head.writeBigInt64BE(BigInt(p.ts), 8)
+    let ok = false
+    try { ok = crypto.verify('sha256', Buffer.concat([head, Buffer.from(p.content, 'utf8')]), key, Buffer.from(p.sig, 'base64')) } catch (e) { ok = false }
+    return ok ? seq : null
+}
 const cpSelect = db.prepare('SELECT seq,payload FROM channel_posts WHERE channel_id=? AND seq>? ORDER BY seq ASC LIMIT 100')
 
 // TTL-чистка при старте + раз в час
@@ -285,9 +306,11 @@ wss.on('connection', (socket, req) => {
             }
 
             if (msg.type === 'channel_post') {
-                // Owner publishes. Relay is BLIND: stores the blob, does NOT verify signature or rights.
-                if (!msg.channelId || msg.seq == null || !msg.payload) return
-                cpInsert.run(msg.channelId, msg.seq|0, msg.payload, Date.now())
+                // №57: релей «слепой» к содержимому, но ПРОВЕРЯЕТ подпись владельца по channelId (там его ключ).
+                // Раньше любой занимал номер seq чужого канала (INSERT OR IGNORE) -> пост владельца отбрасывался.
+                const seq = verifyChannelPost(msg.channelId, msg.seq, msg.payload)
+                if (seq === null) return
+                cpInsert.run(msg.channelId, seq, msg.payload, Date.now())
                 console.log(`[CHAN] post stored`)
                 return
             }
