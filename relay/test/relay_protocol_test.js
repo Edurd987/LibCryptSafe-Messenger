@@ -1,9 +1,12 @@
 // Протокольные тесты relay. Запуск на VPS: node /opt/libcryptsafe/test/relay_protocol_test.js
 const crypto = require('crypto')
-const WebSocket = require('/opt/libcryptsafe/node_modules/ws')
-const Database = require('/opt/libcryptsafe/node_modules/better-sqlite3')
-const URL = 'wss://cryptsafe-relay.duckdns.org/api/v1/sync'
-const db = new Database('/opt/libcryptsafe/queue.db', { readonly: true })
+// Локально: LCS_TEST_URL, LCS_TEST_DB, LCS_TEST_INSECURE=1 (самоподписанный), NODE_PATH -> node_modules.
+const NM = process.env.NODE_PATH ? '' : '/opt/libcryptsafe/node_modules/'
+const WebSocket = require(NM + 'ws')
+const Database = require(NM + 'better-sqlite3')
+const URL = process.env.LCS_TEST_URL || 'wss://cryptsafe-relay.duckdns.org/api/v1/sync'
+const db = new Database(process.env.LCS_TEST_DB || '/opt/libcryptsafe/queue.db', { readonly: true })
+const WS_OPTS = process.env.LCS_TEST_INSECURE === '1' ? { rejectUnauthorized: false } : {}
 const qCount = to => db.prepare('SELECT COUNT(*) AS n FROM queue WHERE recipient=?').get(to).n
 const pkCount = to => db.prepare('SELECT COUNT(*) AS n FROM prekeys WHERE recipient=?').get(to).n
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -16,7 +19,7 @@ function newIdentity() {
 // identity=null -> анонимно; claim — какой ID заявить; badNonce — подписать чужой вызов
 function open(identity, { claim, badNonce } = {}) {
     return new Promise((res, rej) => {
-        const ws = new WebSocket(URL), inbox = []
+        const ws = new WebSocket(URL, WS_OPTS), inbox = []
         let done = false; const finish = () => { if (!done) { done = true; res({ ws, inbox }) } }
         ws.on('message', d => {
             let m; try { m = JSON.parse(d) } catch (e) { return }
@@ -38,8 +41,8 @@ const check = (name, ok) => { console.log((ok ? 'PASS ' : 'FAIL ') + name); if (
 const authed = c => c.inbox.some(m => m.type === 'auth_ok')
 
 ;(async () => {
-    const owner = newIdentity(), attacker = newIdentity(), T = owner.id
-    const a = await open(null)
+    const owner = newIdentity(), attacker = newIdentity(), sender = newIdentity(), T = owner.id
+    const a = await open(sender)   // №55: msg только после входа (раньше тест слал анонимно — опирался на дыру)
 
     const cid = 'testcid' + Date.now()   // ЦЕЛОСТНОСТЬ: дубли по cid
     a.ws.send(JSON.stringify({ type: 'msg', to: T, payload: 'AAAA', cid }))
@@ -94,7 +97,7 @@ const authed = c => c.inbox.some(m => m.type === 'auth_ok')
 
     // DoS-РАЗМЕР: контроль — 60КБ принят; 400КБ — соединение закрыто (1009)
     const T2 = 'SIZE-0000-0000-' + (1000 + Math.floor(Math.random() * 9000))
-    const big = await open(null)
+    const big = await open(newIdentity())   // №55: msg только после входа (контроль размера опирался на дыру)
     const bigClosed = new Promise(r => big.ws.on('close', code => r(code)))
     const okCid = 'okcid' + Date.now()
     big.ws.send(JSON.stringify({ type: 'msg', to: T2, payload: 'A'.repeat(60 * 1024), cid: okCid }))

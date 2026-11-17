@@ -111,6 +111,8 @@ const server = https.createServer({
 // DoS: лимит кадра. Легитимный максимум ~64КБ (медиа-чанк 24КБ x двойной base64);
 // больше -> ws закрывает соединение кодом 1009.
 const MAX_FRAME = 256 * 1024
+// №55: до входа по подписи — только эти кадры. Всё остальное (и любые новые типы) — после входа.
+const PREAUTH_ALLOWED = new Set(['pubkey', 'auth', 'prekeys_upload', 'channel_post', 'channel_fetch'])
 const AUTH_TIMEOUT_MS = 30000   // не вошёл по подписи за 30с -> закрываем
 const wss = new WebSocket.Server({ noServer: true, maxPayload: MAX_FRAME })
 server.on("upgrade", (req, socket, head) => {
@@ -209,6 +211,10 @@ wss.on('connection', (socket, req) => {
                 flushQueue(socket)   // К6: только проверенному владельцу
                 return
             }
+            // №55: default-deny до входа. Раньше prekeys_request и msg работали без личности:
+            // опустошение чужих OPK + слежка за подключением (№54), раздувание чужой очереди (№43).
+            if (!socket.authedId && !PREAUTH_ALLOWED.has(msg.type)) return
+
             if (msg.type === 'prekeys_upload') {
                 // публичная связка Боба: {senderId, keys:[{type,id,value,sig?}]}
                 const owner = msg.senderId
