@@ -163,6 +163,23 @@ setInterval(() => {
 const ipConnections = new Map()
 const MAX_CONNECTIONS_PER_IP = 20
 
+// Хвост №57: channel_fetch без входа -> лимит частоты (ведро токенов) и размера ответа.
+const CH_FETCH_PER_MIN_SOCKET = 30
+const CH_FETCH_PER_MIN_IP = 120          // CGNAT: до 20 пользователей за одним IP (лимит соединений)
+const CH_FETCH_MAX_BYTES = 512 * 1024
+const ipFetchBuckets = new Map()            // IP -> ведро; только в памяти, в лог не пишется
+function takeToken(b, perMin, now) {
+    b.tokens = Math.min(perMin, b.tokens + (now - b.at) * perMin / 60000)
+    b.at = now
+    if (b.tokens < 1) return false
+    b.tokens -= 1
+    return true
+}
+setInterval(() => {                          // чистка давно неиспользуемых ведер IP
+    const now = Date.now()
+    for (const [k, b] of ipFetchBuckets) if (now - b.at > 10 * 60 * 1000) ipFetchBuckets.delete(k)
+}, 60 * 1000)
+
 // HEARTBEAT: находит полуоткрытые (half-open) сокеты. Телефон резко потерял сеть ->
 // соединение висит OPEN минутами, msg 'доставляется' в пустоту. Нет pong за 15с -> terminate
 // -> 'close' чистит clients -> следующие сообщения уходят в очередь.
@@ -184,6 +201,7 @@ setInterval(() => {
 
 wss.on('connection', (socket, req) => {
     const ip = req.socket.remoteAddress
+    socket.chFetch = { tokens: CH_FETCH_PER_MIN_SOCKET, at: Date.now() }   // хвост №57
     // DoS-защита: лимит на IP (IP только в памяти, не в лог)
     const cur = ipConnections.get(ip) || 0
     if (cur >= MAX_CONNECTIONS_PER_IP) {
@@ -318,7 +336,20 @@ wss.on('connection', (socket, req) => {
             if (msg.type === 'channel_fetch') {
                 // Reader pulls. Relay serves posts with seq>sinceSeq. Does NOT know who asked.
                 if (!msg.channelId) return
-                const posts = cpSelect.all(msg.channelId, msg.sinceSeq|0)
+                // Хвост №57: частота — сначала соединение, потом IP; сверх лимита молча отбрасываем.
+                const nowF = Date.now()
+                if (!takeToken(socket.chFetch, CH_FETCH_PER_MIN_SOCKET, nowF)) return
+                let ipb = ipFetchBuckets.get(ip)
+                if (!ipb) { ipb = { tokens: CH_FETCH_PER_MIN_IP, at: nowF }; ipFetchBuckets.set(ip, ipb) }
+                if (!takeToken(ipb, CH_FETCH_PER_MIN_IP, nowF)) return
+                // Размер: не больше CH_FETCH_MAX_BYTES, но хотя бы один пост (остаток — следующим запросом по sinceSeq).
+                const posts = []
+                let bytes = 0
+                for (const p of cpSelect.all(msg.channelId, msg.sinceSeq|0)) {
+                    bytes += Buffer.byteLength(p.payload, 'utf8') + 32
+                    if (posts.length && bytes > CH_FETCH_MAX_BYTES) break
+                    posts.push(p)
+                }
                 socket.send(JSON.stringify({ type: 'channel_posts', channelId: msg.channelId, posts }))
                 console.log(`[CHAN] fetch served ${posts.length} posts`)
                 return
