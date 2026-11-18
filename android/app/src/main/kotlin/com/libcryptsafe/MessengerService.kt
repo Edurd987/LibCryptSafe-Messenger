@@ -80,6 +80,13 @@ class MessengerService : Service() {
                 com.libcryptsafe.util.SafeLogger.i("STRANGER") { "медиа/неизвестный кадр от незнакомца …${peerId.takeLast(4)} выброшен" }
                 return
             }
+            // №23: повтор записанной медиа-передачи (тот же transferId) — выбросить. Постоянно, переживает перезапуск.
+            if (!com.libcryptsafe.media.MediaReplayGuard.admit(rawDecrypted) { key ->
+                    com.libcryptsafe.db.AppDatabase.getInstance(applicationContext).seenNonceDao()
+                        .insertBlocking(com.libcryptsafe.db.SeenNonceEntity(peerId = peerId, nonce = key)) != -1L }) {
+                com.libcryptsafe.util.SafeLogger.w("REPLAY") { "повтор медиа от …${peerId.takeLast(4)} — выброшен" }
+                return
+            }
             dispatchIncoming(contact, com.libcryptsafe.util.IncomingNotifier.isUserMessage(rawDecrypted)) { it.onChatReceived(peerId, rawDecrypted) }
         }
         override fun onInitialHandshakeReceived(peerId: String, content: String) {

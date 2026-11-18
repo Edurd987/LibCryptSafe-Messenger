@@ -18,10 +18,15 @@ interface SeenNonceDao {
     suspend fun markSeen(peerId: String, nonce: String): Boolean =
         insert(SeenNonceEntity(peerId = peerId, nonce = nonce)) != -1L
 
+    // №23: синхронно — только с IO-потока входящих (MessengerService), не с главного.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertBlocking(e: SeenNonceEntity): Long
+
     @Query("DELETE FROM seen_nonces WHERE timestamp < :cutoff")
     suspend fun purgeOlderThan(cutoff: Long): Int
 
     // Только записи чата. X3DH (x3dh:...) не удаляем: их мало, а защита от отката сессии постоянная.
-    @Query("DELETE FROM seen_nonces WHERE timestamp < :cutoff AND nonce NOT LIKE 'x3dh:%'")
+    // №23: media:... тоже не удаляем — у медиа нет метки времени, после удаления повтор снова прошёл бы.
+    @Query("DELETE FROM seen_nonces WHERE timestamp < :cutoff AND nonce NOT LIKE 'x3dh:%' AND nonce NOT LIKE 'media:%'")
     suspend fun purgeChatOlderThan(cutoff: Long): Int
 }
