@@ -493,13 +493,22 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
     }
 
+    // ✓✓ для медиа: отправитель кадра, который сейчас в mediaController.onIncoming
+    // (onMediaComplete вызывается синхронно внутри него). Только главный поток.
+    private var mediaAckPeer: String? = null
+
     private val mediaController by lazy {
         com.libcryptsafe.media.MediaController(
             com.libcryptsafe.media.MediaCrypto(com.libcryptsafe.media.NativeChunkCipher()),
             com.libcryptsafe.media.MediaSerializer(com.libcryptsafe.media.AndroidBase64Codec())
         ).also { mc ->
             // Приём готового файла. Тело — в UI-2 (сохранить + показать как фото в чате).
-            mc.onMediaComplete = { _, kind, bytes ->
+            mc.onMediaComplete = { tid, kind, bytes ->
+                // ✓✓ для медиа: подтвердить отправителю сборку — ТОЛЬКО контакту (№45b).
+                mediaAckPeer?.let { p ->
+                    if (ContactSet.isKnown(p)) sendAck(p, com.libcryptsafe.media.MediaAck.nonce(
+                        com.libcryptsafe.media.AndroidBase64Codec().encode(tid.bytes)))
+                }
                 // UI-2: входящее фото -> Bitmap -> ImageView в ленте. IN-MEMORY:
                 // байты НЕ пишем на диск (форензик-след на изъятом телефоне —
                 // тот самый метаданный риск, от которого весь проект). Дисковая
@@ -666,8 +675,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 val jpeg = compressToLimit(bitmap, limitBytes)
                 // OPSEC: без размера/peerId в логе (метаданные связи).
                 SafeLogger.i("MEDIA_UI") { "photo selected, sending" }
-                runOnUiThread { addMessage("\uD83D\uDCF7 \u0444\u043e\u0442\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442\u0441\u044f (${jpeg.size/1024}KB)...", isOwn = true) }
-                sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.PHOTO, jpeg)
+                sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.PHOTO, jpeg,
+                    "\uD83D\uDCF7 \u0444\u043e\u0442\u043e (${jpeg.size/1024}KB)")
             } catch (e: Exception) {
                 SafeLogger.e("MEDIA_UI") { "photo pick error" }
             }
@@ -1428,8 +1437,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = f.readBytes()
-                runOnUiThread { addMessage("голосовое отправляется (${bytes.size/1024}KB)...", isOwn = true) }
-                sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.VOICE, bytes)
+                sendMedia(currentPeerId, com.libcryptsafe.media.MediaKind.VOICE, bytes,
+                    "\uD83C\uDFA4 голосовое (${bytes.size/1024}KB)")
                 SafeLogger.i("VOICE") { "voice sent" }
             } catch (e: Exception) {
                 SafeLogger.e("VOICE") { "send failed: ${e.message}" }
@@ -1822,9 +1831,12 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     // вообще не входит -> поведение чата/каналов/ack ИДЕНТИЧНО прежнему.
                     if (type.startsWith("media_")) {
                         try {
+                            mediaAckPeer = peerId
                             if (mediaController.onIncoming(raw)) return
                         } catch (e: Exception) {
                             SafeLogger.e("MEDIA_RECV") { "media fail (chat не тронут): ${e.message}" }
+                        } finally {
+                            mediaAckPeer = null
                         }
                     }
                     val ack = j.optString("a", "")
@@ -2032,10 +2044,14 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     // неупорядоченно (это ок), но сокет может захлебнуться. Пока ТЕСТИРУЕМ ТОЛЬКО
     // МАЛЫЙ файл (<=3 чанка ~120KB). Реальные фото — после кирпича backpressure
     // (последовательная отправка + пауза при переполнении bufferedAmount).
-    private fun sendMedia(targetId: String, kind: com.libcryptsafe.media.MediaKind, bytes: ByteArray) {
+    private fun sendMedia(targetId: String, kind: com.libcryptsafe.media.MediaKind, bytes: ByteArray, label: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             val ephKey = mediaController.newEphemeralKeyForSend()   // 32B, живёт один файл
             val envelopes = mediaController.buildTransfer(kind, bytes, ephKey)
+            // ✓✓ для медиа: пузырь с маркером media:<transferId>; ACK получателя найдёт его через nonceToViewMap.
+            val ackNonce = com.libcryptsafe.media.MediaAck.transferIdOf(envelopes.first())
+                ?.let { com.libcryptsafe.media.MediaAck.nonce(it) }
+            runOnUiThread { addMessage(label, isOwn = true, peerId = targetId, nonce = ackNonce) }
             SafeLogger.i("MEDIA_SEND") { "готовим ${envelopes.size} конвертов -> $targetId" }
             if (envelopes.size > 5) SafeLogger.w("MEDIA_SEND") { "ВНИМАНИЕ: ${envelopes.size} конвертов залпом — backpressure не решён, риск на большом файле" }
             // ПОСЛЕДОВАТЕЛЬНО в ЭТОЙ корутине (не sendGameEvent — тот плодит
