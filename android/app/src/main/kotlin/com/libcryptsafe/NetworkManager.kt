@@ -91,6 +91,7 @@ class NetworkManager(
                     if (json.getString("type") == "prekeys_response") {
                         val targetId = json.optString("targetId", "")
                         val pText = pendingMessages.remove(targetId)
+                        val pTag = pendingTags.remove(targetId)
                         if (pText == null || targetId.isEmpty()) return
                         if (json.isNull("ik_sign") || json.isNull("ik_dh") || json.isNull("spk")) {
                             handler.onSystemMessage("у $targetId нет ключей на relay")
@@ -109,7 +110,7 @@ class NetworkManager(
                                 val envelope = JSONObject().apply {
                                     put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                                 }.toString()
-                                sendJson(envelope)
+                                sendJson(envelope, pTag)
                                 SafeLogger.d("X3DH_SEND") { "первое сообщение отправлено -> $targetId" }
                                 handler.onSystemMessage("✓ отправлено (X3DH) $targetId")
                             } catch (e: Exception) {
@@ -161,7 +162,9 @@ class NetworkManager(
                         SafeLogger.i("AUTH") { json.getString("type") }; return
                     }
                     if (json.getString("type") == "relay_rcvd") {
-                        synchronized(unacked) { unacked.remove(json.optString("cid")) }
+                        val u = synchronized(unacked) { unacked.remove(json.optString("cid")) }
+                        val uTag = u?.tag; val uPeer = u?.peer
+                        if (uTag != null && uPeer != null) handler.onRelayAccepted(uPeer, uTag)
                         return
                     }
                     if (json.getString("type") == "msg") {
@@ -242,11 +245,13 @@ class NetworkManager(
         })
     // UPLINK-ACK: 'msg' хранится до relay_rcvd. Мёртвый, но ещё не обнаруженный сокет
     // (до ~40с) принимает send()=true и теряет данные — такие переотправляются в onOpen.
-    private val unacked = java.util.LinkedHashMap<String, String>()
+    // tag (nonce сообщения) и адресат — только для статуса в UI; в сеть уходит out как был.
+    private class Unacked(val out: String, val peer: String?, val tag: String?)
+    private val unacked = java.util.LinkedHashMap<String, Unacked>()
     private val UNACKED_MAX = 500
     private val outbox = java.util.ArrayDeque<String>()
     private val OUTBOX_MAX = 500
-    fun sendJson(json: String) {
+    fun sendJson(json: String, tag: String? = null) {
         try {
             val o = JSONObject(json)
             if (o.optString("type") == "msg") {
@@ -254,7 +259,7 @@ class NetworkManager(
                 o.put("cid", cid); val out = o.toString()
                 synchronized(unacked) {
                     if (unacked.size >= UNACKED_MAX) unacked.remove(unacked.keys.first())
-                    unacked[cid] = out
+                    unacked[cid] = Unacked(out, o.optString("to").ifEmpty { null }, tag)
                 }
                 val w = webSocket
                 if (w != null && isConnected) w.send(out)   // не подтвердят — повторим в onOpen
@@ -270,7 +275,7 @@ class NetworkManager(
         SafeLogger.i("OUTBOX") { "queued, size=$size" }
     }
     private fun resendUnacked(ws: WebSocket) {
-        val list = synchronized(unacked) { unacked.values.toList() }
+        val list = synchronized(unacked) { unacked.values.map { it.out } }
         list.forEach { ws.send(it) }
         if (list.isNotEmpty()) SafeLogger.i("UPLINK") { "resent ${list.size} unacked" }
     }
@@ -288,8 +293,10 @@ class NetworkManager(
     fun wsQueueSize(): Long = webSocket?.queueSize() ?: 0L
 
     // X3DH: положить текст в буфер и запросить prekeys (ответ придёт в onMessage)
-    fun stashPending(targetId: String, plaintext: String) {
+    private val pendingTags = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun stashPending(targetId: String, plaintext: String, tag: String? = null) {
         pendingMessages[targetId] = plaintext
+        if (tag != null) pendingTags[targetId] = tag else pendingTags.remove(targetId)
     }
 
     // БЫСТРЫЙ РЕКОННЕКТ: система сообщила "сеть появилась" -> не ждём backoff (до 16с).

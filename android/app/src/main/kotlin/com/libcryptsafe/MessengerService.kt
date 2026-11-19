@@ -96,6 +96,7 @@ class MessengerService : Service() {
             dispatchIncoming(contact, com.libcryptsafe.util.IncomingNotifier.isUserMessage(content)) { it.onInitialHandshakeReceived(peerId, content) }
         }
         override fun onChannelPosts(channelId: String, posts: List<IncomingPost>) = dispatch { it.onChannelPosts(channelId, posts) }
+        override fun onRelayAccepted(peerId: String, tag: String) = dispatch { it.onRelayAccepted(peerId, tag) }
     }
 
     // Чёрный список: единая точка для ВСЕГО входящего (с Activity и без, уведомление тоже).

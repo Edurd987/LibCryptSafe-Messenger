@@ -135,6 +135,17 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             // Состояние E2EE — только в строке статуса, без баблов в ленте.
         }
     }
+    // Релей принял (relay_rcvd): PENDING -> SENT. rows=0 -> уже DELIVERED/не наше — не трогаем и пузырь.
+    override fun onRelayAccepted(peerId: String, tag: String) {
+        lifecycleScope.launch(com.libcryptsafe.util.DbSerial.d) {
+            val rows = db.messageDao().markRelayAcceptedByNonce(peerId, tag)
+            SafeLogger.d("RELAY_OK") { "nonce=${tag.take(8)} rows=$rows" }
+            if (rows > 0) withContext(Dispatchers.Main) {
+                nonceToViewMap[tag]?.let { it.text = bubbleText(it.text.toString(), true, "SENT") }
+            }
+        }
+    }
+
     override fun onSystemMessage(text: String) {
         val resolved = when (text) {
             SysMsg.CONNECTED -> getString(R.string.status_connected)
@@ -1904,7 +1915,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         val tv = nonceToViewMap.remove(nonce)
         nonceToIdMap.remove(nonce)
         tv?.let { it.text = bubbleText(it.text.toString(), true, "DELIVERED") }
-        lifecycleScope.launch(Dispatchers.IO) {
+        lifecycleScope.launch(com.libcryptsafe.util.DbSerial.d) {
             val rows = db.messageDao().markDeliveredByNonce(peerId, nonce)
             SafeLogger.d("ACK") { "delivered nonce=${nonce.take(8)} rows=$rows" }
             // открыт этот чат, но пузырь нарисован из истории (после перезапуска) -> перерисовать
@@ -2083,7 +2094,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         // НЕ локальный id БД (тот глобальный счётчик — выдал бы собеседнику
         // общее число сообщений). Живёт только внутри шифра.
         val msgNonce = java.util.UUID.randomUUID().toString()
-        addMessage(plaintext, isOwn = true, persist = true, peerId = targetId, nonce = msgNonce)
+        addMessage(plaintext, isOwn = true, persist = true, peerId = targetId, nonce = msgNonce, status = "PENDING")
         currentPeerId = targetId
         saveLastPeerId(targetId)
         lifecycleScope.launch(Dispatchers.IO) {
@@ -2103,14 +2114,14 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                     val envelope = JSONObject().apply {
                         put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                     }.toString()
-                    networkManager?.sendJson(envelope)
+                    networkManager?.sendJson(envelope, msgNonce)
                     SafeLogger.d("X3DH_SEND") { "CHAT_ENCRYPTED -> $targetId" }
                 } else {
                     runOnUiThread { addMessage("ошибка шифрования", isOwn = false) }
                 }
             } else {
                 // сессии нет -> X3DH: очередь + запрос prekeys
-                networkManager?.stashPending(targetId, plaintext)
+                networkManager?.stashPending(targetId, plaintext, msgNonce)
                 val req = JSONObject().apply {
                     put("type", "prekeys_request"); put("targetId", targetId)
                 }.toString()
@@ -2175,19 +2186,18 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     }
 
     // Единый рендер пузыря: только СВОИ сообщения получают галочки статуса.
-    // DELIVERED -> текст + галочка (квитанция пришла). Иначе (SENT/NONE) -> текст.
-    // Одну галочку для SENT не рисуем: у нас "отправил и жду ACK", отдельная
-    // одиночная галочка без подтверждения путала бы больше, чем помогает.
+    // PENDING (часы) -> SENT (одна галочка: релей принял, relay_rcvd) -> DELIVERED (две: E2E-ACK).
+    // NONE — без значка. Логика и снятие прежнего значка — util/StatusMark (тест StatusMarkTest).
     private fun bubbleText(text: String, isOwn: Boolean, status: String): String {
-        return if (isOwn && status == "DELIVERED") "$text  \u2713\u2713" else text
+        return com.libcryptsafe.util.StatusMark.render(text, isOwn, status)
     }
 
     private fun addMessage(text: String, isOwn: Boolean, persist: Boolean = false, peerId: String = currentPeerId, nonce: String? = null, status: String = "NONE", msgId: Long = -1L, fromStranger: Boolean = false) {
         // ФАНТОМНЫЕ СООБЩЕНИЯ: рисуем в ленту ТОЛЬКО если peerId == открытый чат.
         if (peerId != currentPeerId) {
             // не в открытом чате — но сохранить в БД всё равно (без отрисовки).
-            if (persist) lifecycleScope.launch(Dispatchers.IO) {
-                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce, fromStranger = fromStranger))
+            if (persist) lifecycleScope.launch(com.libcryptsafe.util.DbSerial.d) {
+                val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce, fromStranger = fromStranger, status = status))
                 if (nonce != null) nonceToIdMap[nonce] = newId
             }
             return
@@ -2214,8 +2224,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
         }
         // insert ПОСЛЕ создания tv -> проставляем tag ЭТОМУ tv напрямую (по ссылке),
         // работает для входящих И исходящих (у входящих нет nonce, но tv есть).
-        if (persist) lifecycleScope.launch(Dispatchers.IO) {
-            val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce, fromStranger = fromStranger))
+        if (persist) lifecycleScope.launch(com.libcryptsafe.util.DbSerial.d) {
+            val newId = db.messageDao().insert(MessageEntity(peerId = peerId, text = text, isOwn = isOwn, nonce = nonce, fromStranger = fromStranger, status = status))
             if (nonce != null) nonceToIdMap[nonce] = newId
             runOnUiThread { tv.tag = newId }   // tag тому самому tv, без nonce
         }

@@ -42,6 +42,10 @@ interface MessageDao {
     @Query("UPDATE messages SET status = 'DELIVERED' WHERE peerId = :peerId AND nonce = :nonce AND isOwn = 1")
     suspend fun markDeliveredByNonce(peerId: String, nonce: String): Int
 
+    // Релей принял (relay_rcvd): ТОЛЬКО PENDING -> SENT. DELIVERED/NONE не трогаем — статус только вперёд.
+    @Query("UPDATE messages SET status = 'SENT' WHERE peerId = :peerId AND nonce = :nonce AND isOwn = 1 AND status = 'PENDING'")
+    suspend fun markRelayAcceptedByNonce(peerId: String, nonce: String): Int
+
     // Удалить весь диалог с контактом
     // №45b: сколько ЗАПРОСОВ лежит от этого ID — только полученные, пока он был незнакомцем
     // (старая переписка удалённого контакта в лимит не входит).

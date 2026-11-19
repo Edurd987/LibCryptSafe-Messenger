@@ -11,6 +11,8 @@ interface MessengerEventHandler {
     fun onChatReceived(peerId: String, rawDecrypted: String)
     fun onInitialHandshakeReceived(peerId: String, content: String)
     fun onChannelPosts(channelId: String, posts: List<IncomingPost>)
+    // Релей принял исходящее (relay_rcvd). peerId — адресат, tag — nonce сообщения.
+    fun onRelayAccepted(peerId: String, tag: String) {}
 }
 
 // Ключи системных сообщений (строковые ресурсы разрешает получатель — у него Context UI)
