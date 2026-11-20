@@ -27,9 +27,10 @@ class MessengerService : Service() {
 
     // Activity зовёт при старте: "я жива, шли события и мне тоже"
     fun registerActivity(handler: MessengerEventHandler) {
-        activityHandler = handler
         handler.onStatusChanged(lastConnected, lastReconnects)
-        val queued = synchronized(pending) { pending.toList().also { pending.clear() } }
+        // назначение и снимок очереди атомарно с dispatch*. Сброс идёт на главном потоке синхронно,
+        // новые кадры из сети встают в очередь главного потока ПОСЛЕ него — порядок сохраняется.
+        val queued = synchronized(pending) { activityHandler = handler; pending.toList().also { pending.clear() } }
         queued.forEach { it(handler) }   // отдать то, что пришло без Activity
     }
 
@@ -42,9 +43,9 @@ class MessengerService : Service() {
 
     // №45b: входящее сообщение. Без Activity — уведомление по StrangerPolicy (незнакомцы — с интервалом).
     private fun dispatchIncoming(contact: Boolean, userMessage: Boolean, ev: (MessengerEventHandler) -> Unit) {
-        val h = activityHandler
+        // проверка и постановка в pending — под тем же замком, что и registerActivity: кадр не застрянет
+        val h = synchronized(pending) { activityHandler ?: run { pending.add(ev); null } }
         if (h != null) { ev(h); return }
-        synchronized(pending) { pending.add(ev) }
         val now = System.currentTimeMillis()
         if (StrangerPolicy.notify(contact, userMessage, StrangerPolicy.lastStrangerNotifyAt, now)) {
             if (!contact) StrangerPolicy.lastStrangerNotifyAt = now
@@ -58,9 +59,9 @@ class MessengerService : Service() {
     }
 
     private fun dispatch(notify: Boolean = false, ev: (MessengerEventHandler) -> Unit) {
-        val h = activityHandler
+        // проверка и постановка в pending — под тем же замком, что и registerActivity: кадр не застрянет
+        val h = synchronized(pending) { activityHandler ?: run { pending.add(ev); null } }
         if (h != null) { ev(h); return }
-        synchronized(pending) { pending.add(ev) }
         // Activity уничтожена -> сообщить пользователю (без отправителя и текста).
         if (notify) com.libcryptsafe.util.IncomingNotifier.post(applicationContext)
     }

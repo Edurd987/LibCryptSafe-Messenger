@@ -2,6 +2,8 @@ package com.libcryptsafe
 
 import com.libcryptsafe.util.StatusMark
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Статусы доставки: PENDING -> SENT -> DELIVERED, ровно один значок, входящие не трогаем. */
@@ -25,5 +27,12 @@ class StatusMarkTest {
     @Test fun noneNoMark() = assertEquals("foto (96KB)", r("foto (96KB)", "NONE"))
     @Test fun noneThenDelivered() = assertEquals("foto$TWO", r(r("foto", "NONE"), "DELIVERED"))
     // текст пользователя с ОДНИМ пробелом перед галочкой — не наш значок, не снимаем
+    // onRelayAccepted: повышать до одной галочки только из часов (две и одна не откатываются)
+    @Test fun pendingDetected() {
+        assertTrue(StatusMark.isPending(r("hi", "PENDING")))
+        assertFalse(StatusMark.isPending(r("hi", "SENT")))
+        assertFalse(StatusMark.isPending(r("hi", "DELIVERED")))
+        assertFalse(StatusMark.isPending("hi"))
+    }
     @Test fun userCheckmarkKept() = assertEquals("ok \u2713$CLK", r("ok \u2713", "PENDING"))
 }

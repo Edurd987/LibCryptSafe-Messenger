@@ -135,13 +135,17 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             // Состояние E2EE — только в строке статуса, без баблов в ленте.
         }
     }
-    // Релей принял (relay_rcvd): PENDING -> SENT. rows=0 -> уже DELIVERED/не наше — не трогаем и пузырь.
+    // Релей принял (relay_rcvd): PENDING -> SENT. БД: только из PENDING (SQL). Пузырь: только из часов
+    // (StatusMark.isPending) — медиа в БД не пишется (rows=0 норма), две/одна галочка не откатываются.
     override fun onRelayAccepted(peerId: String, tag: String) {
         lifecycleScope.launch(com.libcryptsafe.util.DbSerial.d) {
             val rows = db.messageDao().markRelayAcceptedByNonce(peerId, tag)
             SafeLogger.d("RELAY_OK") { "nonce=${tag.take(8)} rows=$rows" }
-            if (rows > 0) withContext(Dispatchers.Main) {
-                nonceToViewMap[tag]?.let { it.text = bubbleText(it.text.toString(), true, "SENT") }
+            withContext(Dispatchers.Main) {
+                nonceToViewMap[tag]?.let {
+                    if (com.libcryptsafe.util.StatusMark.isPending(it.text.toString()))
+                        it.text = bubbleText(it.text.toString(), true, "SENT")
+                }
             }
         }
     }
@@ -2017,7 +2021,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
      *  sendJson». sendJson синхронный (OkHttp send() c внутренней FIFO), поэтому
      *  ПОСЛЕДОВАТЕЛЬНЫЕ вызовы из ОДНОЙ корутины сохраняют порядок на проводе —
      *  это и чинит гонку init/chunk/done в медиа. */
-    private suspend fun sendGameEnvelopeSync(targetId: String, gameJson: String) {
+    private suspend fun sendGameEnvelopeSync(targetId: String, gameJson: String, tag: String? = null) {
         val session = db.sessionDao().getSession(targetId)
         if (session == null) {
             SafeLogger.w("GAME_SEND") { "\u043d\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u0438 \u0441 $targetId" }
@@ -2030,7 +2034,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             val envelope = JSONObject().apply {
                 put("type", "msg"); put("to", targetId); put("payload", payloadB64)
             }.toString()
-            networkManager?.sendJson(envelope)
+            networkManager?.sendJson(envelope, tag)
             SafeLogger.i("GAME_SEND") { "\u0438\u0433\u0440\u043e\u0432\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435 -> $targetId" }
         }
     }
@@ -2062,7 +2066,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             // ✓✓ для медиа: пузырь с маркером media:<transferId>; ACK получателя найдёт его через nonceToViewMap.
             val ackNonce = com.libcryptsafe.media.MediaAck.transferIdOf(envelopes.first())
                 ?.let { com.libcryptsafe.media.MediaAck.nonce(it) }
-            runOnUiThread { addMessage(label, isOwn = true, peerId = targetId, nonce = ackNonce) }
+            runOnUiThread { addMessage(label, isOwn = true, peerId = targetId, nonce = ackNonce, status = if (ackNonce != null) "PENDING" else "NONE") }
             SafeLogger.i("MEDIA_SEND") { "готовим ${envelopes.size} конвертов -> $targetId" }
             if (envelopes.size > 5) SafeLogger.w("MEDIA_SEND") { "ВНИМАНИЕ: ${envelopes.size} конвертов залпом — backpressure не решён, риск на большом файле" }
             // ПОСЛЕДОВАТЕЛЬНО в ЭТОЙ корутине (не sendGameEvent — тот плодит
@@ -2081,7 +2085,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
                 while ((networkManager?.wsQueueSize() ?: 0L) > QUEUE_LIMIT && waited < 400) {
                     kotlinx.coroutines.delay(50); waited++
                 }
-                sendGameEnvelopeSync(targetId, env)
+                sendGameEnvelopeSync(targetId, env, ackNonce)
                 kotlinx.coroutines.delay(80)   // дать relay форвотнуть, не заливать
                 SafeLogger.i("MEDIA_SEND") { "chunk $i/${envelopes.size} sent, queue=${networkManager?.wsQueueSize() ?: -1}" }
             }

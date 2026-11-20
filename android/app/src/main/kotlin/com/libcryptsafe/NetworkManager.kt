@@ -48,6 +48,10 @@ class NetworkManager(
     // (иначе reveal обгонял commit и партия вешалась — лог 6 ноября).
     @OptIn(ExperimentalCoroutinesApi::class)
     private val inbound = Dispatchers.IO.limitedParallelism(1)
+    // Входящие строго в порядке релея (limitedParallelism сам по себе порядок не держит — см. OrderedInbound).
+    private val ordered = com.libcryptsafe.util.OrderedInbound(scope, inbound) { t ->
+        SafeLogger.w("INBOUND") { "кадр не обработан: ${t.javaClass.simpleName}" }
+    }
 
     fun connect() {
         intentionallyClosed = false
@@ -162,9 +166,13 @@ class NetworkManager(
                         SafeLogger.i("AUTH") { json.getString("type") }; return
                     }
                     if (json.getString("type") == "relay_rcvd") {
-                        val u = synchronized(unacked) { unacked.remove(json.optString("cid")) }
+                        val (u, more) = synchronized(unacked) {
+                            val r = unacked.remove(json.optString("cid")); val t = r?.tag
+                            // медиа: один tag на все кадры передачи -> галочка только когда релей принял ПОСЛЕДНИЙ
+                            r to (t != null && unacked.values.any { it.tag == t })
+                        }
                         val uTag = u?.tag; val uPeer = u?.peer
-                        if (uTag != null && uPeer != null) handler.onRelayAccepted(uPeer, uTag)
+                        if (uTag != null && uPeer != null && !more) handler.onRelayAccepted(uPeer, uTag)
                         return
                     }
                     if (json.getString("type") == "msg") {
@@ -181,7 +189,7 @@ class NetworkManager(
                         try {
                             val inner = JSONObject(String(cipherBytes, Charsets.UTF_8))
                             if (inner.optString("type") == "INITIAL_HANDSHAKE") {
-                                scope.launch(inbound) {
+                                ordered.submit {
                                     val result = try { SessionManager.handleInitialMessage(appContext, inner) }
                                         catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e }
                                         catch (t: Throwable) { SafeLogger.w("X3DH_RECV") { "битый INITIAL_HANDSHAKE: ${t.javaClass.simpleName}" }; null }
@@ -196,7 +204,7 @@ class NetworkManager(
                             }
                             if (inner.optString("type") == "CHAT_ENCRYPTED") {
                                 val cipherStr = inner.optString("cipher", "")
-                                scope.launch(inbound) {
+                                ordered.submit {
                                     val result = try { SessionManager.decryptAnySession(appContext, cipherStr) }
                                         catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e }
                                         catch (t: Throwable) { SafeLogger.w("CHAT_RECV") { "битый CHAT_ENCRYPTED: ${t.javaClass.simpleName}" }; null }

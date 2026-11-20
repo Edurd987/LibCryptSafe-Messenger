@@ -24,6 +24,9 @@ object StatusMark {
         else -> text
     }
 
+    // На пузыре сейчас часы? onRelayAccepted повышает статус только из этого состояния.
+    fun isPending(text: String): Boolean = text.endsWith(CLOCK)
+
     fun render(text: String, isOwn: Boolean, status: String): String {
         if (!isOwn) return text
         val base = strip(text)
