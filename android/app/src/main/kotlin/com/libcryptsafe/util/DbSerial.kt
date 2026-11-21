@@ -1,15 +1,20 @@
 package com.libcryptsafe.util
 
-import kotlinx.coroutines.asCoroutineDispatcher
-import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
- * Один поток НА ПРОЦЕСС для записи сообщений и их статусов.
- * Гарантия: операции выполняются в порядке постановки в очередь. Вставка пузыря ставится
- * ДО шифрования/отправки, UPDATE по relay_rcvd / E2E-ACK — только после ответа сети,
- * значит UPDATE никогда не обгонит INSERT (иначе rows=0 и вечные часы).
+ * Записи сообщений и статусов — строго по очереди, одна очередь на процесс.
+ * Прежняя версия (однопоточный диспетчер) порядок НЕ гарантировала: DAO Room — suspend, они идут на
+ * исполнителе Room и отпускают наш поток, так что следующий UPDATE мог стартовать до конца INSERT
+ * (тот же механизм, что ломал порядок входящих). Теперь — один потребитель (OrderedInbound):
+ * следующая операция начинается только после ПОЛНОГО завершения предыдущей.
  */
 object DbSerial {
-    val d = Executors.newSingleThreadExecutor { r -> Thread(r, "db-serial").apply { isDaemon = true } }
-        .asCoroutineDispatcher()
+    private val q = OrderedInbound(CoroutineScope(SupervisorJob() + Dispatchers.IO), Dispatchers.IO) { t ->
+        SafeLogger.w("DB_SERIAL") { "операция не выполнена: ${t.javaClass.simpleName}" }
+    }
+
+    fun submit(block: suspend () -> Unit) = q.submit(block)
 }

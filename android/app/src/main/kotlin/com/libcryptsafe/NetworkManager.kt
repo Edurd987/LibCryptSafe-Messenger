@@ -38,7 +38,6 @@ class NetworkManager(
     var reconnectAttempts = 0; private set
     private var intentionallyClosed = false
 
-    private val pendingMessages = mutableMapOf<String, String>()
     private val reconnectHandler = Handler(Looper.getMainLooper())
     // №43: любой необработанный сбой в корутинах сети -> лог, а не смерть процесса.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO +
@@ -94,18 +93,24 @@ class NetworkManager(
                     // X3DH: ответ со связкой -> собрать первое сообщение
                     if (json.getString("type") == "prekeys_response") {
                         val targetId = json.optString("targetId", "")
-                        val pText = pendingMessages.remove(targetId)
-                        val pTag = pendingTags.remove(targetId)
-                        if (pText == null || targetId.isEmpty()) return
+                        if (targetId.isEmpty()) return
+                        val batch = pendingX3dh.begin(targetId)
+                        if (batch.isEmpty()) return   // нечего слать или сессия уже строится (повторный ответ)
                         if (json.isNull("ik_sign") || json.isNull("ik_dh") || json.isNull("spk")) {
+                            pendingX3dh.abort(targetId)
                             handler.onSystemMessage("у $targetId нет ключей на relay")
                             return
                         }
                         scope.launch {
                             try {
+                                var rest = batch
+                                // сессия уже есть (гонка с параллельным запросом) -> второй X3DH НЕ строим, всё обычным путём
+                                if (com.libcryptsafe.db.AppDatabase.getInstance(appContext).sessionDao().getSession(targetId) == null) {
+                                val first = batch.first(); rest = batch.drop(1)
                                 val initJson = SessionManager.buildInitialMessage(
-                                    appContext, targetId, json, pText.toByteArray(Charsets.UTF_8))
+                                    appContext, targetId, json, first.text.toByteArray(Charsets.UTF_8))
                                 if (initJson == null) {
+                                    pendingX3dh.abort(targetId)
                                     handler.onSystemMessage("не удалось собрать (подпись?)")
                                     return@launch
                                 }
@@ -114,10 +119,18 @@ class NetworkManager(
                                 val envelope = JSONObject().apply {
                                     put("type", "msg"); put("to", targetId); put("payload", payloadB64)
                                 }.toString()
-                                sendJson(envelope, pTag)
+                                sendJson(envelope, first.tag)
                                 SafeLogger.d("X3DH_SEND") { "первое сообщение отправлено -> $targetId" }
                                 handler.onSystemMessage("✓ отправлено (X3DH) $targetId")
+                                }
+                                // остальные — в установленной сессии; плюс то, что добавилось, пока она строилась
+                                while (true) {
+                                    for (item in rest) sendInSession(targetId, item)
+                                    rest = pendingX3dh.more(targetId)
+                                    if (rest.isEmpty()) break
+                                }
                             } catch (e: Exception) {
+                                pendingX3dh.abort(targetId)
                                 SafeLogger.e("X3DH_SEND") { "ошибка: ${e.message}" }
                             }
                         }
@@ -301,10 +314,22 @@ class NetworkManager(
     fun wsQueueSize(): Long = webSocket?.queueSize() ?: 0L
 
     // X3DH: положить текст в буфер и запросить prekeys (ответ придёт в onMessage)
-    private val pendingTags = java.util.concurrent.ConcurrentHashMap<String, String>()
-    fun stashPending(targetId: String, plaintext: String, tag: String? = null) {
-        pendingMessages[targetId] = plaintext
-        if (tag != null) pendingTags[targetId] = tag else pendingTags.remove(targetId)
+    // X3DH: очередь на адресата до прихода prekeys (раньше Map — второе сообщение затирало первое).
+    private val pendingX3dh = com.libcryptsafe.util.PendingX3dh()
+    /** true — нужно отправить prekeys_request (запроса ещё нет или ответа нет 30 с). */
+    fun stashPending(targetId: String, plaintext: String, tag: String? = null): Boolean =
+        pendingX3dh.stash(targetId, plaintext, tag)
+
+    // Сообщение из X3DH-очереди в уже установленной сессии: формат как MainActivity.sendToPeer (v/n/t/ts).
+    private suspend fun sendInSession(targetId: String, item: com.libcryptsafe.util.PendingX3dh.Item) {
+        val inner = JSONObject().apply {
+            put("v", 1); if (item.tag != null) put("n", item.tag); put("t", item.text); put("ts", System.currentTimeMillis())
+        }.toString()
+        val pkt = SessionManager.encryptMessage(appContext, targetId, inner)
+        if (pkt == null) { SafeLogger.e("X3DH_SEND") { "очередь: шифрование не удалось" }; return }
+        val payloadB64 = Base64.encodeToString(pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        sendJson(JSONObject().apply { put("type", "msg"); put("to", targetId); put("payload", payloadB64) }.toString(), item.tag)
+        SafeLogger.d("X3DH_SEND") { "из очереди в сессии -> $targetId" }
     }
 
     // БЫСТРЫЙ РЕКОННЕКТ: система сообщила "сеть появилась" -> не ждём backoff (до 16с).
