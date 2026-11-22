@@ -184,7 +184,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
     override fun onInitialHandshakeReceived(peerId: String, content: String) {
         runOnUiThread {
             if (currentPeerId == "UNKNOWN" && ContactSet.isKnown(peerId)) { currentPeerId = peerId; saveLastPeerId(peerId) }   // №38, №45b
-            deliverIncoming(content, peerId)
+            if (com.libcryptsafe.util.InitialContent.isChatV1(content)) handleDecrypted(peerId, content)   // общий конвейер: ACK, повтор, незнакомцы, порядок
+            else deliverIncoming(content, peerId)   // старый формат: голый текст
         }
     }
 
@@ -1908,7 +1909,7 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
 
     // №45b: входящее без nonce (первое сообщение X3DH, старый текстовый формат) — тот же лимит незнакомца.
     private fun deliverIncoming(raw: String, peerId: String) {
-        lifecycleScope.launch(Dispatchers.IO) {
+        inChat.submit {   // по порядку с остальными входящими
             val contact = isContactIo(peerId)
             val stored = if (contact) 0 else db.messageDao().countFromStranger(peerId)
             val verdict = StrangerPolicy.chat(contact, fresh = true, storedFromPeer = stored)

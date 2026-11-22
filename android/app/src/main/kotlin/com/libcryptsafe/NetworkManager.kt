@@ -108,7 +108,7 @@ class NetworkManager(
                                 if (com.libcryptsafe.db.AppDatabase.getInstance(appContext).sessionDao().getSession(targetId) == null) {
                                 val first = batch.first(); rest = batch.drop(1)
                                 val initJson = SessionManager.buildInitialMessage(
-                                    appContext, targetId, json, first.text.toByteArray(Charsets.UTF_8))
+                                    appContext, targetId, json, chatInner(first).toByteArray(Charsets.UTF_8))
                                 if (initJson == null) {
                                     pendingX3dh.abort(targetId)
                                     handler.onSystemMessage("не удалось собрать (подпись?)")
@@ -320,11 +320,15 @@ class NetworkManager(
     fun stashPending(targetId: String, plaintext: String, tag: String? = null): Boolean =
         pendingX3dh.stash(targetId, plaintext, tag)
 
+    // Формат сообщения чата (как MainActivity.sendToPeer): v/n/t/ts. Тот же — и внутри X3DH-рукопожатия,
+    // чтобы первое сообщение получило ACK, защиту от повтора и политику незнакомцев, как обычное.
+    private fun chatInner(item: com.libcryptsafe.util.PendingX3dh.Item): String = JSONObject().apply {
+        put("v", 1); if (item.tag != null) put("n", item.tag); put("t", item.text); put("ts", System.currentTimeMillis())
+    }.toString()
+
     // Сообщение из X3DH-очереди в уже установленной сессии: формат как MainActivity.sendToPeer (v/n/t/ts).
     private suspend fun sendInSession(targetId: String, item: com.libcryptsafe.util.PendingX3dh.Item) {
-        val inner = JSONObject().apply {
-            put("v", 1); if (item.tag != null) put("n", item.tag); put("t", item.text); put("ts", System.currentTimeMillis())
-        }.toString()
+        val inner = chatInner(item)
         val pkt = SessionManager.encryptMessage(appContext, targetId, inner)
         if (pkt == null) { SafeLogger.e("X3DH_SEND") { "очередь: шифрование не удалось" }; return }
         val payloadB64 = Base64.encodeToString(pkt.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
