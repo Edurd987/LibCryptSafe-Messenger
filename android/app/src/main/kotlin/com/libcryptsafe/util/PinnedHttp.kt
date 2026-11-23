@@ -21,17 +21,7 @@ private class SmallSendBufferSocketFactory : javax.net.SocketFactory() {
     override fun createSocket(h: java.net.InetAddress, p: Int, la: java.net.InetAddress, lp: Int): java.net.Socket = tune(d.createSocket(h, p, la, lp))
 }
 
-// Запасной DNS: фильтрующие резолверы (DNSCrypt в InviZible и др.) могут блокировать
-// duckdns.org -> UnknownHostException. Системный DNS — первым; при отказе — известный IP.
-// Пиннинг и проверка имени в TLS НЕ меняются: меняется только поиск IP.
-private object FallbackDns : okhttp3.Dns {
-    private val FALLBACK = mapOf("cryptsafe-relay.duckdns.org" to listOf("87.199.204.168"))
-    override fun lookup(hostname: String): List<java.net.InetAddress> = try {
-        okhttp3.Dns.SYSTEM.lookup(hostname)
-    } catch (e: java.net.UnknownHostException) {
-        FALLBACK[hostname]?.map { java.net.InetAddress.getByName(it) } ?: throw e
-    }
-}
+// DNS релея — util/TimedFallbackDns (№42): системный DNS не дольше 4 с, запасной IP всегда в списке адресов.
 
 object PinnedHttp {
     private val pinner = okhttp3.CertificatePinner.Builder()
@@ -50,7 +40,7 @@ object PinnedHttp {
             .writeTimeout(60, TimeUnit.SECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
             .certificatePinner(pinner)
-            .dns(FallbackDns)
+            .dns(com.libcryptsafe.util.TimedFallbackDns())
             .socketFactory(SmallSendBufferSocketFactory())
             .build()
     }
