@@ -21,13 +21,14 @@
     <string name="net_status">Status: %1$s</string>
     <string name="net_status_on">🟢 Connected</string>
     <string name="net_status_off">🔴 Disconnected</string>
-    <string name="net_cipher">Cipher: ECDH (X25519) + AES-256-GCM</string>
+    <string name="net_cipher">Cipher: X3DH (ECDH P-256) + AES-256-GCM</string>
     <string name="net_fingerprint">Fingerprint: %1$s...</string>
     <string name="net_server">Server: %1$s</string>
     <string name="net_reconnects">Reconnections: %1$d</string>
     <string name="net_e2ee">E2EE: %1$s</string>
     <string name="status_connecting">🔑 %1$s... | Connecting...</string>
-    <string name="e2ee_on">🟢 Active (ECDH)</string>
+    <string name="e2ee_on">🟢 X3DH sessions: %1$d</string>
+    <string name="e2ee_none">⚪ no sessions yet</string>
     <string name="e2ee_waiting">🟡 Waiting handshake</string>
     <string name="waiting_companion">🟡 Waiting for companion...</string>
     <string name="handshake_done">🔐 ECDH handshake complete!</string>

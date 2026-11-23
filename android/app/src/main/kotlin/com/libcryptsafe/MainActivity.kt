@@ -132,6 +132,8 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             tvStatus.text = if (connected) getString(R.string.status_connected)
                             else getString(R.string.reconnecting)
             GameActivity.CURRENT?.onConnectionChanged(connected)
+            // панель «Сеть» — из того же источника, что и шапка (раньше рисовалась один раз и врала «Отключено»)
+            if (findViewById<TextView?>(R.id.net_status) != null) updateNetworkPanel()
         }
     }
     override fun onHandshakeDone(fingerprint: String) {
@@ -1815,8 +1817,15 @@ class MainActivity : AppCompatActivity(), MessengerEventHandler, GameCallback {
             getString(R.string.net_transport)
         findViewById<TextView>(R.id.net_status).text =
             getString(R.string.net_status, if (isConnected) getString(R.string.net_status_on) else getString(R.string.net_status_off))
-        findViewById<TextView>(R.id.net_e2ee).text =
-            getString(R.string.net_e2ee, getString(R.string.e2ee_on))   // №38: E2EE = X3DH по каждому контакту, не legacy-рукопожатие
+        // E2EE: не вечное «активно», а число установленных X3DH-сессий (0 — честное «нет»). №38: X3DH по контактам
+        val e2eeView = findViewById<TextView>(R.id.net_e2ee)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val n = db.sessionDao().count()
+            withContext(Dispatchers.Main) {
+                e2eeView.text = getString(R.string.net_e2ee,
+                    if (n > 0) getString(R.string.e2ee_on, n) else getString(R.string.e2ee_none))
+            }
+        }
         findViewById<TextView>(R.id.net_cipher).text =
             getString(R.string.net_cipher)
         findViewById<TextView>(R.id.net_fingerprint).text =

@@ -21,13 +21,14 @@
     <string name="net_status">Статус: %1$s</string>
     <string name="net_status_on">🟢 Подключено</string>
     <string name="net_status_off">🔴 Отключено</string>
-    <string name="net_cipher">Шифр: ECDH (X25519) + AES-256-GCM</string>
+    <string name="net_cipher">Шифр: X3DH (ECDH P-256) + AES-256-GCM</string>
     <string name="net_fingerprint">Отпечаток: %1$s...</string>
     <string name="net_server">Сервер: %1$s</string>
     <string name="net_reconnects">Переподключений: %1$d</string>
     <string name="net_e2ee">E2EE: %1$s</string>
     <string name="status_connecting">🔑 %1$s... | Подключение...</string>
-    <string name="e2ee_on">🟢 Активно (ECDH)</string>
+    <string name="e2ee_on">🟢 X3DH-сессий: %1$d</string>
+    <string name="e2ee_none">⚪ сессий пока нет</string>
     <string name="e2ee_waiting">🟡 Ожидание handshake</string>
     <string name="waiting_companion">🟡 Ожидание собеседника...</string>
     <string name="handshake_done">🔐 ECDH handshake выполнен!</string>
